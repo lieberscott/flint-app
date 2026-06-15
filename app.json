@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "flint-app",
+    "name": "Flint",
     "slug": "flint-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,15 +8,19 @@
     "scheme": "flintapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Flint uses your location to find other riders on the same train who are also bothered by loud phone audio, so you can speak up together."
+      }
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#1a1a2e",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -31,7 +35,13 @@
         {
           "image": "./assets/images/splash-icon.png",
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#1a1a2e"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Flint uses your location to find other riders on the same train who are also bothered by loud phone audio, so you can speak up together."
         }
       ]
     ],
