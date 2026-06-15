@@ -1,4 +1,0 @@
-project_id = "flint-app"
-
-[functions.match-incident]
-verify_jwt = true
