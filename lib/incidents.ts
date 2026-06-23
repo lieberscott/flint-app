@@ -6,13 +6,10 @@ import {
   update,
   push,
   onValue,
-  serverTimestamp,
-  query,
-  orderByChild,
-  equalTo,
 } from 'firebase/database';
 import { auth, db } from './firebase';
 import { encodeGeohash } from './location';
+import type { IncidentContext, NearbyCluster } from './map';
 import type {
   Incident,
   IncidentMember,
@@ -20,7 +17,10 @@ import type {
   MemberRole,
 } from './types';
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+export type { NearbyCluster } from './map';
+
+const PROXIMITY_METERS = 50;
+const MOVEMENT_SPEED_THRESHOLD = 2;
 
 function haversineMeters(
   lat1: number, lng1: number,
@@ -49,13 +49,45 @@ function movementMatches(
   refHeading: number | null, refSpeed: number | null,
 ): boolean {
   if (refLat == null || refLng == null) return true;
-  if (haversineMeters(lat, lng, refLat, refLng) > 50) return false;
+  if (haversineMeters(lat, lng, refLat, refLng) > PROXIMITY_METERS) return false;
+
+  const moving = (speed ?? 0) > MOVEMENT_SPEED_THRESHOLD || (refSpeed ?? 0) > MOVEMENT_SPEED_THRESHOLD;
+  if (!moving) {
+    return true;
+  }
+
   if (heading != null && refHeading != null && headingDiff(heading, refHeading) > 20) return false;
   if (speed != null && refSpeed != null && Math.abs(speed - refSpeed) > 3) return false;
   return true;
 }
 
-// ─── Rate limiting ───────────────────────────────────────────────────────────
+function transitMatches(
+  context: IncidentContext | undefined,
+  incident: Record<string, unknown>,
+): boolean {
+  const reporterLine = context?.transitLine?.trim();
+  const reporterDirection = context?.direction?.trim();
+  const reporterCar = context?.carNumber?.trim();
+
+  const incidentLine = typeof incident.transit_line === 'string' ? incident.transit_line.trim() : '';
+  const incidentDirection = typeof incident.direction === 'string' ? incident.direction.trim() : '';
+  const incidentCar = typeof incident.car_number === 'string' ? incident.car_number.trim() : '';
+
+  if (reporterLine && incidentLine && reporterLine !== incidentLine) return false;
+  if (reporterDirection && incidentDirection && reporterDirection !== incidentDirection) return false;
+  if (reporterCar && incidentCar && reporterCar !== incidentCar) return false;
+
+  return true;
+}
+
+function isJoinableIncident(incident: Record<string, unknown>, now: number): boolean {
+  return (
+    ['open', 'ready'].includes(String(incident.status)) &&
+    Number(incident.expires_at) > now &&
+    incident.last_lat != null &&
+    incident.last_lng != null
+  );
+}
 
 async function checkRateLimit(userId: string): Promise<void> {
   const oneHourAgo = Date.now() - 60 * 60 * 1000;
@@ -73,16 +105,49 @@ async function recordRateLimit(userId: string): Promise<void> {
   await push(ref(db, `rate_limits/${userId}`), Date.now());
 }
 
-// ─── Core match function (replaces the Supabase Edge Function) ───────────────
-
-export async function reportNuisance(
-  transitLine: string,
-  direction: string,
+async function findMatchingIncident(
   lat: number,
   lng: number,
   heading: number | null,
   speed: number | null,
-  carNumber: string | null,
+  context?: IncidentContext,
+): Promise<string | null> {
+  const now = Date.now();
+  const incidentsSnap = await get(ref(db, 'incidents'));
+  if (!incidentsSnap.exists()) {
+    return null;
+  }
+
+  const incidents = incidentsSnap.val() as Record<string, Record<string, unknown>>;
+  for (const [id, incident] of Object.entries(incidents)) {
+    if (!isJoinableIncident(incident, now)) continue;
+    if (!transitMatches(context, incident)) continue;
+
+    const matches = movementMatches(
+      lat,
+      lng,
+      heading,
+      speed,
+      Number(incident.last_lat),
+      Number(incident.last_lng),
+      (incident.last_heading as number | null) ?? null,
+      (incident.last_speed as number | null) ?? null,
+    );
+
+    if (matches) {
+      return id;
+    }
+  }
+
+  return null;
+}
+
+export async function reportNuisance(
+  lat: number,
+  lng: number,
+  heading: number | null,
+  speed: number | null,
+  context?: IncidentContext,
 ): Promise<MatchIncidentResponse> {
   const userId = auth.currentUser?.uid;
   if (!userId) throw new Error('Not signed in');
@@ -93,45 +158,19 @@ export async function reportNuisance(
   const expiresAt = now + 10 * 60 * 1000;
   const geohash = encodeGeohash(lat, lng, 7);
 
-  // Look for an existing open incident on the same line/direction
-  const incidentsSnap = await get(ref(db, 'incidents'));
-  let matchedId: string | null = null;
-
-  if (incidentsSnap.exists()) {
-    const incidents = incidentsSnap.val() as Record<string, any>;
-    for (const [id, incident] of Object.entries(incidents)) {
-      if (incident.transit_line !== transitLine.trim()) continue;
-      if (incident.direction !== direction.trim()) continue;
-      if (!['open', 'ready'].includes(incident.status)) continue;
-      if (incident.expires_at < now) continue;
-      if (carNumber && incident.car_number && incident.car_number !== carNumber) continue;
-
-      const matches = movementMatches(
-        lat, lng, heading, speed,
-        incident.last_lat, incident.last_lng,
-        incident.last_heading, incident.last_speed,
-      );
-
-      if (matches) {
-        matchedId = id;
-        break;
-      }
-    }
-  }
-
+  const matchedId = await findMatchingIncident(lat, lng, heading, speed, context);
   let incidentId: string;
 
   if (matchedId) {
     incidentId = matchedId;
   } else {
-    // Create a new incident
     const newRef = push(ref(db, 'incidents'));
     incidentId = newRef.key!;
     await set(newRef, {
-      transit_line: transitLine.trim(),
-      direction: direction.trim(),
+      transit_line: context?.transitLine?.trim() || null,
+      direction: context?.direction?.trim() || null,
       geohash,
-      car_number: carNumber ?? null,
+      car_number: context?.carNumber?.trim() || null,
       status: 'open',
       expires_at: expiresAt,
       last_lat: lat,
@@ -150,15 +189,61 @@ export async function reportNuisance(
   return _buildResponse(incidentId, userId);
 }
 
-export async function pingIncident(
+export async function joinIncident(
   incidentId: string,
-  _transitLine: string,
-  _direction: string,
   lat: number,
   lng: number,
   heading: number | null,
   speed: number | null,
-  _carNumber: string | null,
+  context?: IncidentContext,
+): Promise<MatchIncidentResponse> {
+  const userId = auth.currentUser?.uid;
+  if (!userId) throw new Error('Not signed in');
+
+  const incidentSnap = await get(ref(db, `incidents/${incidentId}`));
+  if (!incidentSnap.exists()) {
+    throw new Error('Report not found');
+  }
+
+  const incident = incidentSnap.val() as Record<string, unknown>;
+  const now = Date.now();
+  if (!isJoinableIncident(incident, now)) {
+    throw new Error('This report is no longer active');
+  }
+
+  if (!transitMatches(context, incident)) {
+    throw new Error('Transit details do not match this report');
+  }
+
+  const matches = movementMatches(
+    lat,
+    lng,
+    heading,
+    speed,
+    Number(incident.last_lat),
+    Number(incident.last_lng),
+    (incident.last_heading as number | null) ?? null,
+    (incident.last_speed as number | null) ?? null,
+  );
+
+  if (!matches) {
+    throw new Error('You are too far from this report to join');
+  }
+
+  const expiresAt = now + 10 * 60 * 1000;
+  await _upsertMember(incidentId, userId, lat, lng, heading, speed);
+  await _refreshExpiry(incidentId, lat, lng, heading, speed, expiresAt);
+  await _checkReady(incidentId);
+
+  return _buildResponse(incidentId, userId);
+}
+
+export async function pingIncident(
+  incidentId: string,
+  lat: number,
+  lng: number,
+  heading: number | null,
+  speed: number | null,
 ): Promise<MatchIncidentResponse> {
   const userId = auth.currentUser?.uid;
   if (!userId) throw new Error('Not signed in');
@@ -169,8 +254,6 @@ export async function pingIncident(
 
   return _buildResponse(incidentId, userId);
 }
-
-// ─── Private helpers ─────────────────────────────────────────────────────────
 
 async function _upsertMember(
   incidentId: string,
@@ -218,7 +301,7 @@ async function _checkReady(incidentId: string): Promise<void> {
   const snap = await get(ref(db, `incident_members/${incidentId}`));
   if (!snap.exists()) return;
 
-  const members: Record<string, any> = snap.val();
+  const members: Record<string, { role: MemberRole }> = snap.val();
   const roles = Object.values(members).map((m) => m.role);
   const hasConfronter = roles.includes('confronter');
   const partnerCount = roles.filter((r) => r === 'partner').length;
@@ -250,7 +333,79 @@ async function _buildResponse(
   };
 }
 
-// ─── Public incident actions ─────────────────────────────────────────────────
+async function _memberCount(incidentId: string): Promise<number> {
+  const snap = await get(ref(db, `incident_members/${incidentId}`));
+  if (!snap.exists()) return 0;
+  return Object.keys(snap.val()).length;
+}
+
+export async function listNearbyIncidents(
+  lat: number,
+  lng: number,
+  radiusMeters = 200,
+): Promise<NearbyCluster[]> {
+  const now = Date.now();
+  const incidentsSnap = await get(ref(db, 'incidents'));
+  if (!incidentsSnap.exists()) {
+    return [];
+  }
+
+  const incidents = incidentsSnap.val() as Record<string, Record<string, unknown>>;
+  const clusters: NearbyCluster[] = [];
+
+  for (const [incidentId, incident] of Object.entries(incidents)) {
+    if (!isJoinableIncident(incident, now)) continue;
+
+    const incidentLat = Number(incident.last_lat);
+    const incidentLng = Number(incident.last_lng);
+    const distance = haversineMeters(lat, lng, incidentLat, incidentLng);
+    if (distance > radiusMeters) continue;
+
+    const memberCount = await _memberCount(incidentId);
+    if (memberCount === 0) continue;
+
+    clusters.push({
+      incidentId,
+      lat: incidentLat,
+      lng: incidentLng,
+      memberCount,
+    });
+  }
+
+  return clusters.sort((a, b) => b.memberCount - a.memberCount);
+}
+
+export function subscribeToNearbyIncidents(
+  lat: number,
+  lng: number,
+  radiusMeters: number,
+  onChange: (clusters: NearbyCluster[]) => void,
+): () => void {
+  const incidentsRef = ref(db, 'incidents');
+  const membersRef = ref(db, 'incident_members');
+
+  let active = true;
+
+  const refresh = async () => {
+    if (!active) return;
+    const clusters = await listNearbyIncidents(lat, lng, radiusMeters);
+    onChange(clusters);
+  };
+
+  void refresh();
+  const unsubIncidents = onValue(incidentsRef, () => {
+    void refresh();
+  });
+  const unsubMembers = onValue(membersRef, () => {
+    void refresh();
+  });
+
+  return () => {
+    active = false;
+    unsubIncidents();
+    unsubMembers();
+  };
+}
 
 export async function setMemberRole(
   incidentId: string,
@@ -262,11 +417,11 @@ export async function setMemberRole(
   if (role === 'confronter') {
     const snap = await get(ref(db, `incident_members/${incidentId}`));
     if (snap.exists()) {
-      const members: Record<string, any> = snap.val();
-      const alreadyHasConfronter = Object.values(members).some(
-        (m) => m.role === 'confronter',
+      const members: Record<string, { role: MemberRole }> = snap.val();
+      const hasOtherConfronter = Object.entries(members).some(
+        ([id, m]) => m.role === 'confronter' && id !== userId,
       );
-      if (alreadyHasConfronter) {
+      if (hasOtherConfronter) {
         throw new Error('Someone is already the confronter');
       }
     }
@@ -293,8 +448,8 @@ export async function getIncident(incidentId: string): Promise<Incident | null> 
   const d = snap.val();
   return {
     id: incidentId,
-    transit_line: d.transit_line,
-    direction: d.direction,
+    transit_line: d.transit_line ?? null,
+    direction: d.direction ?? null,
     geohash: d.geohash,
     car_number: d.car_number ?? null,
     status: d.status,
@@ -316,33 +471,30 @@ export async function getIncidentMembers(
 
   if (!membersSnap.exists()) return [];
 
-  const profiles: Record<string, any> = profilesSnap.exists()
-    ? profilesSnap.val()
-    : {};
+  const profiles: Record<string, { display_name: string; shirt_color?: string | null }> =
+    profilesSnap.exists() ? profilesSnap.val() : {};
 
-  return Object.entries(membersSnap.val() as Record<string, any>)
-    .map(([userId, m]) => ({
-      id: `${incidentId}_${userId}`,
+  return Object.entries(membersSnap.val() as Record<string, Record<string, unknown>>)
+    .map(([memberUserId, m]) => ({
+      id: `${incidentId}_${memberUserId}`,
       incident_id: incidentId,
-      user_id: userId,
-      role: m.role,
-      last_lat: m.last_lat ?? null,
-      last_lng: m.last_lng ?? null,
-      heading: m.heading ?? null,
-      speed: m.speed ?? null,
-      joined_at: new Date(m.joined_at).toISOString(),
-      profile: profiles[userId]
+      user_id: memberUserId,
+      role: m.role as MemberRole,
+      last_lat: (m.last_lat as number | null) ?? null,
+      last_lng: (m.last_lng as number | null) ?? null,
+      heading: (m.heading as number | null) ?? null,
+      speed: (m.speed as number | null) ?? null,
+      joined_at: new Date(m.joined_at as number).toISOString(),
+      profile: profiles[memberUserId]
         ? {
-            id: userId,
-            display_name: profiles[userId].display_name,
-            shirt_color: profiles[userId].shirt_color ?? null,
+            id: memberUserId,
+            display_name: profiles[memberUserId].display_name,
+            shirt_color: profiles[memberUserId].shirt_color ?? null,
           }
         : undefined,
     }))
     .sort((a, b) => a.joined_at.localeCompare(b.joined_at));
 }
-
-// ─── Realtime subscription (replaces Supabase postgres_changes) ──────────────
 
 export function subscribeToIncident(
   incidentId: string,
@@ -359,8 +511,6 @@ export function subscribeToIncident(
     unsubMembers();
   };
 }
-
-// ─── Pure utility helpers (used by screens) ──────────────────────────────────
 
 export function countOthers(members: IncidentMember[], userId: string): number {
   return members.filter((m) => m.user_id !== userId).length;

@@ -57,7 +57,7 @@ export default function SetupScreen() {
       if (!granted) {
         Alert.alert(
           'Location required',
-          'Flint needs location access to match you with riders on the same train.',
+          'Flint needs location access to match you with nearby people.',
         );
         return;
       }
@@ -126,8 +126,8 @@ export default function SetupScreen() {
 
         <Card>
           <Body>
-            Location is used only while you report a nuisance, to match you with riders on the same
-            train. Sessions expire after 10 minutes.
+            Location is used while you report a nuisance, to match you with nearby people. Sessions
+            expire after 10 minutes.
           </Body>
         </Card>
 

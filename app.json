@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": false,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Flint uses your location to find other riders on the same train who are also bothered by loud phone audio, so you can speak up together."
+        "NSLocationWhenInUseUsageDescription": "Flint uses your location to find nearby people bothered by loud phone audio, so you can speak up together."
       }
     },
     "android": {
@@ -41,7 +41,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Flint uses your location to find other riders on the same train who are also bothered by loud phone audio, so you can speak up together."
+          "locationWhenInUsePermission": "Flint uses your location to find nearby people bothered by loud phone audio, so you can speak up together."
         }
       ]
     ],

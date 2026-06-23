@@ -9,8 +9,8 @@ export type Profile = {
 
 export type Incident = {
   id: string;
-  transit_line: string;
-  direction: string;
+  transit_line: string | null;
+  direction: string | null;
   geohash: string;
   car_number: string | null;
   status: IncidentStatus;

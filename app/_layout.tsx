@@ -12,9 +12,9 @@ export default function RootLayout() {
           headerTitleStyle: { fontWeight: '600' },
           contentStyle: { backgroundColor: '#16213e' },
         }}>
-        <Stack.Screen name="index" options={{ title: 'Flint' }} />
+        <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="setup" options={{ title: 'Setup', headerBackVisible: false }} />
-        <Stack.Screen name="ready" options={{ title: 'Ready' }} />
+        <Stack.Screen name="ready" options={{ headerShown: false }} />
       </Stack>
     </>
   );
