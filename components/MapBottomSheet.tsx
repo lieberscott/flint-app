@@ -5,7 +5,6 @@ import { Button, Input } from '@/components/controls';
 import { Body, Subtitle, Title } from '@/components/ui';
 import {
   CONFRONTER_SCRIPT,
-  DIRECTIONS,
   PARTNER_SCRIPT,
   type IncidentMember,
   type IncidentStatus,
@@ -17,52 +16,71 @@ type Props = {
   state: SheetState;
   othersCount: number;
   status: IncidentStatus;
-  myRole?: string;
   reporting: boolean;
   acting: boolean;
-  showTransit: boolean;
-  transitLine: string;
-  direction: string;
-  carNumber: string;
-  confronterLabel: string;
-  partnersCount: number;
+  description: string;
+  members: IncidentMember[];
+  userId: string | null;
   isConfronter: boolean;
   isPartner: boolean;
-  onToggleTransit: () => void;
-  onTransitLineChange: (value: string) => void;
-  onDirectionChange: (value: string) => void;
-  onCarNumberChange: (value: string) => void;
+  onDescriptionChange: (value: string) => void;
   onReport: () => void;
   onRole: (role: 'confronter' | 'partner') => void;
   onGo: () => void;
   onDone: () => void;
 };
 
+const SHIRT_HEX: Record<string, string> = {
+  black: '#111827',
+  white: '#f8fafc',
+  red: '#ef4444',
+  blue: '#3b82f6',
+  green: '#22c55e',
+};
+
+function shirtHex(color?: string | null): string {
+  return (color && SHIRT_HEX[color]) || '#64748b';
+}
+
+function roleLabel(role: string): string {
+  if (role === 'confronter') return 'speaking first';
+  if (role === 'partner') return 'backing up';
+  return 'no role yet';
+}
+
 export function MapBottomSheet({
   state,
   othersCount,
   status,
-  myRole,
   reporting,
   acting,
-  showTransit,
-  transitLine,
-  direction,
-  carNumber,
-  confronterLabel,
-  partnersCount,
+  description,
+  members,
+  userId,
   isConfronter,
   isPartner,
-  onToggleTransit,
-  onTransitLineChange,
-  onDirectionChange,
-  onCarNumberChange,
+  onDescriptionChange,
   onReport,
   onRole,
   onGo,
   onDone,
 }: Props) {
   const insets = useSafeAreaInsets();
+
+  const roster = members.length > 0 && (
+    <View style={styles.roster}>
+      {members.map((member) => (
+        <View key={member.user_id} style={styles.rosterRow}>
+          <View style={[styles.swatch, { backgroundColor: shirtHex(member.profile?.shirt_color) }]} />
+          <Text style={styles.rosterName}>
+            {member.profile?.display_name || 'Someone'}
+            {member.user_id === userId ? ' (you)' : ''}
+          </Text>
+          <Text style={styles.rosterRole}>{roleLabel(member.role)}</Text>
+        </View>
+      ))}
+    </View>
+  );
 
   return (
     <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
@@ -72,44 +90,18 @@ export function MapBottomSheet({
           <Subtitle>
             Tap report to check in. Nearby dots show others bothered by loud audio in your area.
           </Subtitle>
+          <Input
+            label="Quick description (optional)"
+            onChangeText={onDescriptionChange}
+            placeholder="Green shirt, phone audio, inside Chipotle"
+            value={description}
+            maxLength={40}
+          />
           <Button
             disabled={reporting}
             label={reporting ? 'Checking in...' : 'Report nuisance'}
             onPress={onReport}
           />
-          <Button
-            label={showTransit ? 'Hide transit details' : 'On transit? Add details'}
-            onPress={onToggleTransit}
-            variant="secondary"
-          />
-          {showTransit && (
-            <View style={styles.transitSection}>
-              <Input
-                label="Transit line (optional)"
-                onChangeText={onTransitLineChange}
-                placeholder="N, 4, M14A..."
-                value={transitLine}
-              />
-              <Body>Direction (optional)</Body>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-                {DIRECTIONS.map((item) => (
-                  <Button
-                    key={item}
-                    label={item}
-                    onPress={() => onDirectionChange(item)}
-                    variant={direction === item ? 'primary' : 'secondary'}
-                  />
-                ))}
-              </ScrollView>
-              <Input
-                keyboardType="numeric"
-                label="Car # (optional)"
-                onChangeText={onCarNumberChange}
-                placeholder="If visible"
-                value={carNumber}
-              />
-            </View>
-          )}
         </>
       )}
 
@@ -124,7 +116,8 @@ export function MapBottomSheet({
                 : `${othersCount} others nearby also bothered.`}
           </Body>
           <Body>Status: {status}</Body>
-          {myRole && myRole !== 'bothered' && <Body>Your role: {myRole}</Body>}
+          {roster}
+          <Button disabled={acting} label="Leave" onPress={onDone} variant="secondary" />
         </>
       )}
 
@@ -134,6 +127,8 @@ export function MapBottomSheet({
           <Body>When you are ready to speak up together.</Body>
           <Button label="I'll speak first" onPress={() => onRole('confronter')} />
           <Button label="I'll back them up" onPress={() => onRole('partner')} variant="secondary" />
+          {roster}
+          <Button disabled={acting} label="Leave" onPress={onDone} variant="secondary" />
         </>
       )}
 
@@ -149,8 +144,7 @@ export function MapBottomSheet({
                   : 'The group is speaking up now.'
               : 'Review the script. The confronter starts when everyone is ready.'}
           </Subtitle>
-          <Body>Confronter: {confronterLabel}</Body>
-          <Body>Partners ready: {String(partnersCount)}</Body>
+          {roster}
           <Body>Confronter says:</Body>
           <Subtitle>{CONFRONTER_SCRIPT}</Subtitle>
           <Body>Partners say:</Body>
@@ -166,7 +160,7 @@ export function MapBottomSheet({
           )}
           <Button
             disabled={acting}
-            label="Done"
+            label="Leave"
             onPress={onDone}
             variant={state === 'ready' && isConfronter ? 'secondary' : 'primary'}
           />
@@ -197,11 +191,32 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: '700',
   },
-  transitSection: {
-    gap: 12,
+  roster: {
+    gap: 10,
+    marginTop: 4,
+    marginBottom: 4,
   },
-  chips: {
-    gap: 8,
+  rosterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  swatch: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: '#475569',
+  },
+  rosterName: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+  },
+  rosterRole: {
+    color: '#94a3b8',
+    fontSize: 13,
   },
   scroll: {
     maxHeight: 280,

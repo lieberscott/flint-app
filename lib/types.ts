@@ -9,10 +9,8 @@ export type Profile = {
 
 export type Incident = {
   id: string;
-  transit_line: string | null;
-  direction: string | null;
+  description: string | null;
   geohash: string;
-  car_number: string | null;
   status: IncidentStatus;
   expires_at: string;
   last_lat: number | null;
@@ -42,8 +40,6 @@ export type MatchIncidentResponse = {
 };
 
 export const SHIRT_COLORS = ['black', 'white', 'red', 'blue', 'green', 'other'] as const;
-
-export const DIRECTIONS = ['Northbound', 'Southbound', 'Eastbound', 'Westbound', 'Uptown', 'Downtown'] as const;
 
 export const CONFRONTER_SCRIPT =
   'Excuse me — would you mind using headphones? It\'s disturbing people nearby.';

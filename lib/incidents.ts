@@ -6,10 +6,14 @@ import {
   update,
   push,
   onValue,
+  query,
+  orderByChild,
+  equalTo,
+  runTransaction,
 } from 'firebase/database';
 import { auth, db } from './firebase';
 import { encodeGeohash } from './location';
-import type { IncidentContext, NearbyCluster } from './map';
+import type { NearbyCluster } from './map';
 import type {
   Incident,
   IncidentMember,
@@ -19,8 +23,63 @@ import type {
 
 export type { NearbyCluster } from './map';
 
-const PROXIMITY_METERS = 50;
-const MOVEMENT_SPEED_THRESHOLD = 2;
+// Geohash bucket size for nearby queries (~0.6km x 1.2km cells).
+const GEOHASH_PRECISION = 6;
+
+// One precision-6 cell spans roughly this many degrees.
+const LAT_CELL_DEGREES = 0.0055;
+const LNG_CELL_DEGREES = 0.011;
+
+// The geohash of the user's cell plus its 8 neighbors (a 3x3 grid).
+// We query all 9 so we never miss someone sitting just across a cell line.
+function neighborGeohashes(lat: number, lng: number): string[] {
+  const cells = new Set<string>();
+  for (const dLat of [-LAT_CELL_DEGREES, 0, LAT_CELL_DEGREES]) {
+    for (const dLng of [-LNG_CELL_DEGREES, 0, LNG_CELL_DEGREES]) {
+      cells.add(encodeGeohash(lat + dLat, lng + dLng, GEOHASH_PRECISION));
+    }
+  }
+  return Array.from(cells);
+}
+
+// Read only the rows at `path` whose geohash falls in the 9 nearby cells,
+// instead of downloading the whole table. Works for both the full
+// 'incidents' table and the lightweight 'incident_summaries' table.
+async function fetchByGeohash(
+  path: 'incidents' | 'incident_summaries',
+  lat: number,
+  lng: number,
+): Promise<Array<[string, Record<string, unknown>]>> {
+  const buckets = neighborGeohashes(lat, lng);
+  const snaps = await Promise.all(
+    buckets.map((bucket) =>
+      get(query(ref(db, path), orderByChild('geohash'), equalTo(bucket))),
+    ),
+  );
+
+  const result: Array<[string, Record<string, unknown>]> = [];
+  const seen = new Set<string>();
+  for (const snap of snaps) {
+    if (!snap.exists()) continue;
+    const rows = snap.val() as Record<string, Record<string, unknown>>;
+    for (const [id, row] of Object.entries(rows)) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      result.push([id, row]);
+    }
+  }
+  return result;
+}
+
+// True if a summary should appear on the map (open/ready, not expired, has a position).
+function isSummaryActive(summary: Record<string, unknown>, now: number): boolean {
+  return (
+    ['open', 'ready'].includes(String(summary.status)) &&
+    Number(summary.expires_at) > now &&
+    summary.lat != null &&
+    summary.lng != null
+  );
+}
 
 function haversineMeters(
   lat1: number, lng1: number,
@@ -36,50 +95,6 @@ function haversineMeters(
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-function headingDiff(a: number | null, b: number | null): number {
-  if (a == null || b == null) return 0;
-  const diff = Math.abs(a - b) % 360;
-  return diff > 180 ? 360 - diff : diff;
-}
-
-function movementMatches(
-  lat: number, lng: number,
-  heading: number | null, speed: number | null,
-  refLat: number | null, refLng: number | null,
-  refHeading: number | null, refSpeed: number | null,
-): boolean {
-  if (refLat == null || refLng == null) return true;
-  if (haversineMeters(lat, lng, refLat, refLng) > PROXIMITY_METERS) return false;
-
-  const moving = (speed ?? 0) > MOVEMENT_SPEED_THRESHOLD || (refSpeed ?? 0) > MOVEMENT_SPEED_THRESHOLD;
-  if (!moving) {
-    return true;
-  }
-
-  if (heading != null && refHeading != null && headingDiff(heading, refHeading) > 20) return false;
-  if (speed != null && refSpeed != null && Math.abs(speed - refSpeed) > 3) return false;
-  return true;
-}
-
-function transitMatches(
-  context: IncidentContext | undefined,
-  incident: Record<string, unknown>,
-): boolean {
-  const reporterLine = context?.transitLine?.trim();
-  const reporterDirection = context?.direction?.trim();
-  const reporterCar = context?.carNumber?.trim();
-
-  const incidentLine = typeof incident.transit_line === 'string' ? incident.transit_line.trim() : '';
-  const incidentDirection = typeof incident.direction === 'string' ? incident.direction.trim() : '';
-  const incidentCar = typeof incident.car_number === 'string' ? incident.car_number.trim() : '';
-
-  if (reporterLine && incidentLine && reporterLine !== incidentLine) return false;
-  if (reporterDirection && incidentDirection && reporterDirection !== incidentDirection) return false;
-  if (reporterCar && incidentCar && reporterCar !== incidentCar) return false;
-
-  return true;
-}
-
 function isJoinableIncident(incident: Record<string, unknown>, now: number): boolean {
   return (
     ['open', 'ready'].includes(String(incident.status)) &&
@@ -92,12 +107,21 @@ function isJoinableIncident(incident: Record<string, unknown>, now: number): boo
 async function checkRateLimit(userId: string): Promise<void> {
   const oneHourAgo = Date.now() - 60 * 60 * 1000;
   const snap = await get(ref(db, `rate_limits/${userId}`));
-  if (snap.exists()) {
-    const timestamps: number[] = Object.values(snap.val());
-    const recent = timestamps.filter((t) => t > oneHourAgo);
-    if (recent.length >= 3) {
-      throw new Error('Rate limit exceeded — max 3 reports per hour.');
-    }
+  if (!snap.exists()) return;
+
+  const entries = snap.val() as Record<string, number>;
+  const recent = Object.values(entries).filter((t) => t > oneHourAgo);
+  if (recent.length >= 3) {
+    throw new Error('Rate limit exceeded — max 3 reports per hour.');
+  }
+
+  // Tidy up timestamps older than an hour so this list can't grow forever.
+  const removeStale: Record<string, null> = {};
+  for (const [key, t] of Object.entries(entries)) {
+    if (t <= oneHourAgo) removeStale[key] = null;
+  }
+  if (Object.keys(removeStale).length > 0) {
+    await update(ref(db, `rate_limits/${userId}`), removeStale);
   }
 }
 
@@ -105,49 +129,12 @@ async function recordRateLimit(userId: string): Promise<void> {
   await push(ref(db, `rate_limits/${userId}`), Date.now());
 }
 
-async function findMatchingIncident(
-  lat: number,
-  lng: number,
-  heading: number | null,
-  speed: number | null,
-  context?: IncidentContext,
-): Promise<string | null> {
-  const now = Date.now();
-  const incidentsSnap = await get(ref(db, 'incidents'));
-  if (!incidentsSnap.exists()) {
-    return null;
-  }
-
-  const incidents = incidentsSnap.val() as Record<string, Record<string, unknown>>;
-  for (const [id, incident] of Object.entries(incidents)) {
-    if (!isJoinableIncident(incident, now)) continue;
-    if (!transitMatches(context, incident)) continue;
-
-    const matches = movementMatches(
-      lat,
-      lng,
-      heading,
-      speed,
-      Number(incident.last_lat),
-      Number(incident.last_lng),
-      (incident.last_heading as number | null) ?? null,
-      (incident.last_speed as number | null) ?? null,
-    );
-
-    if (matches) {
-      return id;
-    }
-  }
-
-  return null;
-}
-
 export async function reportNuisance(
   lat: number,
   lng: number,
   heading: number | null,
   speed: number | null,
-  context?: IncidentContext,
+  description?: string | null,
 ): Promise<MatchIncidentResponse> {
   const userId = auth.currentUser?.uid;
   if (!userId) throw new Error('Not signed in');
@@ -156,35 +143,28 @@ export async function reportNuisance(
 
   const now = Date.now();
   const expiresAt = now + 10 * 60 * 1000;
-  const geohash = encodeGeohash(lat, lng, 7);
+  const geohash = encodeGeohash(lat, lng, GEOHASH_PRECISION);
 
-  const matchedId = await findMatchingIncident(lat, lng, heading, speed, context);
-  let incidentId: string;
-
-  if (matchedId) {
-    incidentId = matchedId;
-  } else {
-    const newRef = push(ref(db, 'incidents'));
-    incidentId = newRef.key!;
-    await set(newRef, {
-      transit_line: context?.transitLine?.trim() || null,
-      direction: context?.direction?.trim() || null,
-      geohash,
-      car_number: context?.carNumber?.trim() || null,
-      status: 'open',
-      expires_at: expiresAt,
-      last_lat: lat,
-      last_lng: lng,
-      last_heading: heading,
-      last_speed: speed,
-      created_at: now,
-    });
-  }
+  // Every report creates its own incident — no auto-merge.
+  const newRef = push(ref(db, 'incidents'));
+  const incidentId = newRef.key!;
+  await set(newRef, {
+    description: description?.trim().slice(0, 40) || null,
+    geohash,
+    status: 'open',
+    expires_at: expiresAt,
+    last_lat: lat,
+    last_lng: lng,
+    last_heading: heading,
+    last_speed: speed,
+    created_at: now,
+  });
 
   await recordRateLimit(userId);
   await _upsertMember(incidentId, userId, lat, lng, heading, speed);
   await _refreshExpiry(incidentId, lat, lng, heading, speed, expiresAt);
   await _checkReady(incidentId);
+  await _writeSummary(incidentId);
 
   return _buildResponse(incidentId, userId);
 }
@@ -195,7 +175,6 @@ export async function joinIncident(
   lng: number,
   heading: number | null,
   speed: number | null,
-  context?: IncidentContext,
 ): Promise<MatchIncidentResponse> {
   const userId = auth.currentUser?.uid;
   if (!userId) throw new Error('Not signed in');
@@ -211,29 +190,11 @@ export async function joinIncident(
     throw new Error('This report is no longer active');
   }
 
-  if (!transitMatches(context, incident)) {
-    throw new Error('Transit details do not match this report');
-  }
-
-  const matches = movementMatches(
-    lat,
-    lng,
-    heading,
-    speed,
-    Number(incident.last_lat),
-    Number(incident.last_lng),
-    (incident.last_heading as number | null) ?? null,
-    (incident.last_speed as number | null) ?? null,
-  );
-
-  if (!matches) {
-    throw new Error('You are too far from this report to join');
-  }
-
   const expiresAt = now + 10 * 60 * 1000;
   await _upsertMember(incidentId, userId, lat, lng, heading, speed);
   await _refreshExpiry(incidentId, lat, lng, heading, speed, expiresAt);
   await _checkReady(incidentId);
+  await _writeSummary(incidentId);
 
   return _buildResponse(incidentId, userId);
 }
@@ -251,6 +212,7 @@ export async function pingIncident(
   const expiresAt = Date.now() + 10 * 60 * 1000;
   await _upsertMember(incidentId, userId, lat, lng, heading, speed);
   await _refreshExpiry(incidentId, lat, lng, heading, speed, expiresAt);
+  await _refreshSummaryIfStale(incidentId);
 
   return _buildResponse(incidentId, userId);
 }
@@ -293,6 +255,7 @@ async function _refreshExpiry(
     last_lng: lng,
     last_heading: heading,
     last_speed: speed,
+    geohash: encodeGeohash(lat, lng, GEOHASH_PRECISION),
     expires_at: expiresAt,
   });
 }
@@ -333,10 +296,72 @@ async function _buildResponse(
   };
 }
 
-async function _memberCount(incidentId: string): Promise<number> {
-  const snap = await get(ref(db, `incident_members/${incidentId}`));
-  if (!snap.exists()) return 0;
-  return Object.keys(snap.val()).length;
+const SUMMARY_REFRESH_MS = 12000; // a dot you haven't joined refreshes at most this often
+
+// The lightweight "dot" the map listens to: position, head count, status.
+// Written only at meaningful moments (report / join / role / go / close),
+// never on every GPS ping — that is what stops the map waking up constantly.
+async function _writeSummary(incidentId: string): Promise<void> {
+  const [incidentSnap, membersSnap] = await Promise.all([
+    get(ref(db, `incidents/${incidentId}`)),
+    get(ref(db, `incident_members/${incidentId}`)),
+  ]);
+  if (!incidentSnap.exists()) return;
+
+  const incident = incidentSnap.val() as Record<string, unknown>;
+  const memberCount = membersSnap.exists() ? Object.keys(membersSnap.val()).length : 0;
+
+  await set(ref(db, `incident_summaries/${incidentId}`), {
+    lat: incident.last_lat ?? null,
+    lng: incident.last_lng ?? null,
+    geohash: incident.geohash ?? null,
+    description: incident.description ?? null,
+    status: incident.status ?? 'open',
+    member_count: memberCount,
+    expires_at: incident.expires_at ?? 0,
+    updated_at: Date.now(),
+  });
+}
+
+// Called from the 5-second ping loop. Refreshes the dot only if it has not
+// been refreshed recently, so a steady stream of pings does not keep
+// rewriting the summary (and waking everyone's map).
+async function _refreshSummaryIfStale(incidentId: string): Promise<void> {
+  const snap = await get(ref(db, `incident_summaries/${incidentId}/updated_at`));
+  const lastUpdated = snap.exists() ? Number(snap.val()) : 0;
+  if (Date.now() - lastUpdated > SUMMARY_REFRESH_MS) {
+    await _writeSummary(incidentId);
+  }
+}
+
+// Delete an incident and everything attached to it, in one write.
+async function _deleteIncidentData(incidentId: string): Promise<void> {
+  await update(ref(db), {
+    [`incidents/${incidentId}`]: null,
+    [`incident_members/${incidentId}`]: null,
+    [`incident_summaries/${incidentId}`]: null,
+  });
+}
+
+// Record one resolved nuisance for the permanent, anonymized metric.
+// Bumps a lifetime counter and logs a de-identified event (no names,
+// no user IDs, no precise location — just a coarse ~20km area cell).
+async function _recordResolved(
+  incident: Record<string, unknown>,
+  memberCount: number,
+): Promise<void> {
+  await runTransaction(ref(db, 'metrics/incidents_resolved'), (current) => (current ?? 0) + 1);
+
+  const createdAt = Number(incident.created_at ?? Date.now());
+  const coarseArea =
+    typeof incident.geohash === 'string' ? incident.geohash.slice(0, 4) : null;
+
+  await push(ref(db, 'metrics/resolved_events'), {
+    resolved_at: Date.now(),
+    duration_seconds: Math.max(0, Math.round((Date.now() - createdAt) / 1000)),
+    group_size: memberCount,
+    area: coarseArea,
+  });
 }
 
 export async function listNearbyIncidents(
@@ -345,30 +370,32 @@ export async function listNearbyIncidents(
   radiusMeters = 200,
 ): Promise<NearbyCluster[]> {
   const now = Date.now();
-  const incidentsSnap = await get(ref(db, 'incidents'));
-  if (!incidentsSnap.exists()) {
-    return [];
-  }
-
-  const incidents = incidentsSnap.val() as Record<string, Record<string, unknown>>;
+  const summaries = await fetchByGeohash('incident_summaries', lat, lng);
   const clusters: NearbyCluster[] = [];
 
-  for (const [incidentId, incident] of Object.entries(incidents)) {
-    if (!isJoinableIncident(incident, now)) continue;
+  for (const [incidentId, summary] of summaries) {
+    // Opportunistic cleanup: if we happen to read a timed-out incident,
+    // delete its leftover data so dead records don't pile up.
+    if (Number(summary.expires_at) <= now) {
+      void _deleteIncidentData(incidentId);
+      continue;
+    }
+    if (!isSummaryActive(summary, now)) continue;
 
-    const incidentLat = Number(incident.last_lat);
-    const incidentLng = Number(incident.last_lng);
-    const distance = haversineMeters(lat, lng, incidentLat, incidentLng);
+    const summaryLat = Number(summary.lat);
+    const summaryLng = Number(summary.lng);
+    const distance = haversineMeters(lat, lng, summaryLat, summaryLng);
     if (distance > radiusMeters) continue;
 
-    const memberCount = await _memberCount(incidentId);
+    const memberCount = Number(summary.member_count ?? 0);
     if (memberCount === 0) continue;
 
     clusters.push({
       incidentId,
-      lat: incidentLat,
-      lng: incidentLng,
+      lat: summaryLat,
+      lng: summaryLng,
       memberCount,
+      description: typeof summary.description === 'string' ? summary.description : null,
     });
   }
 
@@ -381,29 +408,35 @@ export function subscribeToNearbyIncidents(
   radiusMeters: number,
   onChange: (clusters: NearbyCluster[]) => void,
 ): () => void {
-  const incidentsRef = ref(db, 'incidents');
-  const membersRef = ref(db, 'incident_members');
-
+  const buckets = neighborGeohashes(lat, lng);
   let active = true;
+  let timer: ReturnType<typeof setTimeout> | null = null;
 
-  const refresh = async () => {
-    if (!active) return;
-    const clusters = await listNearbyIncidents(lat, lng, radiusMeters);
-    onChange(clusters);
+  // Collapse a burst of callbacks (e.g. all 9 bucket listeners firing at
+  // once on attach) into a single read.
+  const refresh = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(async () => {
+      if (!active) return;
+      const clusters = await listNearbyIncidents(lat, lng, radiusMeters);
+      onChange(clusters);
+    }, 250);
   };
 
-  void refresh();
-  const unsubIncidents = onValue(incidentsRef, () => {
-    void refresh();
-  });
-  const unsubMembers = onValue(membersRef, () => {
-    void refresh();
-  });
+  // Listen ONLY to the lightweight summaries in the 9 nearby cells.
+  // We no longer listen to `incidents` or `incident_members`, so other
+  // people's 5-second GPS pings never wake this map.
+  const unsubscribers = buckets.map((bucket) =>
+    onValue(
+      query(ref(db, 'incident_summaries'), orderByChild('geohash'), equalTo(bucket)),
+      refresh,
+    ),
+  );
 
   return () => {
     active = false;
-    unsubIncidents();
-    unsubMembers();
+    if (timer) clearTimeout(timer);
+    unsubscribers.forEach((unsub) => unsub());
   };
 }
 
@@ -415,31 +448,99 @@ export async function setMemberRole(
   if (!userId) throw new Error('Not signed in');
 
   if (role === 'confronter') {
-    const snap = await get(ref(db, `incident_members/${incidentId}`));
-    if (snap.exists()) {
-      const members: Record<string, { role: MemberRole }> = snap.val();
-      const hasOtherConfronter = Object.entries(members).some(
-        ([id, m]) => m.role === 'confronter' && id !== userId,
-      );
-      if (hasOtherConfronter) {
-        throw new Error('Someone is already the confronter');
-      }
+    // Atomically claim the single confronter slot. The updater runs against
+    // the latest value, so if two people tap "I'll speak first" at the same
+    // instant, only the first write wins; the second sees the slot already
+    // taken, aborts, and we tell that user it's unavailable.
+    const claim = await runTransaction(
+      ref(db, `incidents/${incidentId}/confronter_uid`),
+      (current) => (current == null || current === userId ? userId : undefined),
+    );
+    if (!claim.committed) {
+      throw new Error('Someone is already the confronter');
     }
+  } else {
+    // Choosing a non-confronter role: if we were the one holding the
+    // confronter slot, release it so someone else can claim it.
+    await runTransaction(
+      ref(db, `incidents/${incidentId}/confronter_uid`),
+      (current) => (current === userId ? null : undefined),
+    );
   }
 
   await update(ref(db, `incident_members/${incidentId}/${userId}`), { role });
   await _checkReady(incidentId);
+  await _writeSummary(incidentId);
 }
 
 export async function triggerGo(incidentId: string): Promise<void> {
-  await update(ref(db, `incidents/${incidentId}`), {
-    status: 'go',
-    go_at: Date.now(),
-  });
+  // Group size right now, for the resolved metric.
+  const membersSnap = await get(ref(db, `incident_members/${incidentId}`));
+  const memberCount = membersSnap.exists() ? Object.keys(membersSnap.val()).length : 0;
+
+  // Flip to 'go' only on the first open/ready -> go transition, so the
+  // resolved metric is counted exactly once even if Go is tapped twice.
+  const tx = await runTransaction(ref(db, `incidents/${incidentId}/status`), (current) =>
+    current === 'open' || current === 'ready' ? 'go' : undefined,
+  );
+  if (!tx.committed) return;
+
+  await update(ref(db, `incidents/${incidentId}`), { go_at: Date.now() });
+
+  // "Resolved" = the group reached the confrontation step. Record it once, here.
+  const incidentSnap = await get(ref(db, `incidents/${incidentId}`));
+  const incident = incidentSnap.exists() ? (incidentSnap.val() as Record<string, unknown>) : {};
+  await _recordResolved(incident, memberCount);
+
+  await _writeSummary(incidentId);
 }
 
-export async function closeIncident(incidentId: string): Promise<void> {
-  await update(ref(db, `incidents/${incidentId}`), { status: 'closed' });
+export async function leaveIncident(incidentId: string): Promise<void> {
+  const userId = auth.currentUser?.uid;
+  if (!userId) throw new Error('Not signed in');
+
+  const membersSnap = await get(ref(db, `incident_members/${incidentId}`));
+  const members = membersSnap.exists()
+    ? (membersSnap.val() as Record<string, { role?: string }>)
+    : {};
+  const others = Object.keys(members).filter((id) => id !== userId);
+
+  // If I'm the last one here, the incident dissolves. This whole-incident
+  // delete is allowed because, at this instant, I'm still a member.
+  if (others.length === 0) {
+    await _deleteIncidentData(incidentId);
+    return;
+  }
+
+  // Others remain. Do everything in ONE atomic write, so it's all authorized
+  // while I'm still a member: remove myself, tick the dot's head count down,
+  // revert the group if it can no longer be "ready," and release the
+  // confronter slot if I was holding it.
+  const incidentSnap = await get(ref(db, `incidents/${incidentId}`));
+  const incident = incidentSnap.exists() ? (incidentSnap.val() as Record<string, unknown>) : null;
+
+  const updates: Record<string, unknown> = {
+    [`incident_members/${incidentId}/${userId}`]: null,
+    [`incident_summaries/${incidentId}/member_count`]: others.length,
+    [`incident_summaries/${incidentId}/updated_at`]: Date.now(),
+  };
+
+  // If the people left behind can no longer form a ready group (need a
+  // confronter and at least one partner) and we aren't mid-confrontation,
+  // drop the incident back to "open".
+  const remainingRoles = others.map((id) => members[id]?.role);
+  const stillReady =
+    remainingRoles.includes('confronter') && remainingRoles.some((r) => r === 'partner');
+  if (incident && incident.status === 'ready' && !stillReady) {
+    updates[`incidents/${incidentId}/status`] = 'open';
+    updates[`incident_summaries/${incidentId}/status`] = 'open';
+  }
+
+  if (incident && incident.confronter_uid === userId) {
+    updates[`incidents/${incidentId}/confronter_uid`] = null;
+  }
+
+  await update(ref(db), updates);
 }
 
 export async function getIncident(incidentId: string): Promise<Incident | null> {
@@ -448,10 +549,8 @@ export async function getIncident(incidentId: string): Promise<Incident | null> 
   const d = snap.val();
   return {
     id: incidentId,
-    transit_line: d.transit_line ?? null,
-    direction: d.direction ?? null,
+    description: d.description ?? null,
     geohash: d.geohash,
-    car_number: d.car_number ?? null,
     status: d.status,
     expires_at: new Date(d.expires_at).toISOString(),
     last_lat: d.last_lat ?? null,

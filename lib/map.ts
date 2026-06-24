@@ -12,12 +12,7 @@ export type NearbyCluster = {
   lat: number;
   lng: number;
   memberCount: number;
-};
-
-export type IncidentContext = {
-  transitLine?: string;
-  direction?: string;
-  carNumber?: string;
+  description?: string | null;
 };
 
 export function markerColorForRole(role: MemberRole | 'self'): string {

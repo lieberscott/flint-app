@@ -37,14 +37,16 @@ type InputProps = {
   onChangeText: (value: string) => void;
   placeholder?: string;
   keyboardType?: 'default' | 'numeric';
+  maxLength?: number;
 };
 
-export function Input({ label, value, onChangeText, placeholder, keyboardType = 'default' }: InputProps) {
+export function Input({ label, value, onChangeText, placeholder, keyboardType = 'default', maxLength }: InputProps) {
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
         keyboardType={keyboardType}
+        maxLength={maxLength}
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor="#64748b"

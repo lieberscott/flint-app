@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Platform, StyleSheet, View } from 'react-native';
 
 import { FlintMap } from '@/components/FlintMap';
@@ -10,9 +10,8 @@ import { ensureAnonymousSession, getCurrentUserId, getProfile } from '@/lib/auth
 import { isFirebaseConfigured } from '@/lib/firebase';
 import type { NearbyCluster } from '@/lib/map';
 import {
-  closeIncident,
+  leaveIncident,
   countOthers,
-  countPartners,
   getConfronter,
   getIncident,
   getIncidentMembers,
@@ -32,14 +31,6 @@ import {
   type LocationPing,
 } from '@/lib/location';
 import type { IncidentMember, IncidentStatus } from '@/lib/types';
-
-function buildContext(transitLine: string, direction: string, carNumber: string) {
-  return {
-    transitLine: transitLine.trim() || undefined,
-    direction: direction.trim() || undefined,
-    carNumber: carNumber.trim() || undefined,
-  };
-}
 
 function deriveSheetState(
   incidentId: string | null,
@@ -65,16 +56,14 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [reporting, setReporting] = useState(false);
   const [acting, setActing] = useState(false);
-  const [showTransit, setShowTransit] = useState(false);
-  const [transitLine, setTransitLine] = useState('');
-  const [direction, setDirection] = useState('');
-  const [carNumber, setCarNumber] = useState('');
+  const [description, setDescription] = useState('');
   const [incidentId, setIncidentId] = useState<string | null>(paramIncidentId);
   const [members, setMembers] = useState<IncidentMember[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [status, setStatus] = useState<IncidentStatus>('open');
   const [userPing, setUserPing] = useState<LocationPing | null>(null);
   const [nearbyClusters, setNearbyClusters] = useState<NearbyCluster[]>([]);
+  const prevMembersRef = useRef<IncidentMember[]>([]);
 
   const userCoordinate = userPing
     ? { latitude: userPing.lat, longitude: userPing.lng }
@@ -86,17 +75,30 @@ export default function HomeScreen() {
       getIncidentMembers(activeIncidentId),
     ]);
 
-    if (incident) {
-      setStatus(incident.status);
-      if (incident.status === 'closed') {
-        setIncidentId(null);
-        setMembers([]);
-        setStatus('open');
-      }
+    // Incident is gone (closed and cleaned up) or explicitly closed:
+    // drop back to the map.
+    if (!incident || incident.status === 'closed') {
+      setIncidentId(null);
+      setMembers([]);
+      setStatus('open');
+      prevMembersRef.current = [];
+      return;
     }
 
+    // If someone who was here is now gone, say so (but never about myself).
+    const nextIds = new Set(nextMembers.map((m) => m.user_id));
+    const left = prevMembersRef.current.filter(
+      (m) => m.user_id !== userId && !nextIds.has(m.user_id),
+    );
+    if (left.length > 0) {
+      const names = left.map((m) => m.profile?.display_name ?? 'Someone').join(', ');
+      Alert.alert('Someone left', `${names} left the group.`);
+    }
+    prevMembersRef.current = nextMembers;
+
+    setStatus(incident.status);
     setMembers(nextMembers);
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     if (paramIncidentId) {
@@ -145,6 +147,7 @@ export default function HomeScreen() {
       return;
     }
 
+    prevMembersRef.current = [];
     void refreshIncident(incidentId);
     const unsubscribeRealtime = subscribeToIncident(incidentId, () => {
       void refreshIncident(incidentId);
@@ -211,11 +214,12 @@ export default function HomeScreen() {
         ping.lng,
         ping.heading,
         ping.speed,
-        buildContext(transitLine, direction, carNumber),
+        description,
       );
 
       setIncidentId(result.incident_id);
       setStatus(result.status);
+      setDescription('');
       await refreshIncident(result.incident_id);
     } catch (error) {
       Alert.alert('Report failed', error instanceof Error ? error.message : 'Unknown error');
@@ -242,7 +246,6 @@ export default function HomeScreen() {
         ping.lng,
         ping.heading,
         ping.speed,
-        buildContext(transitLine, direction, carNumber),
       );
 
       setIncidentId(result.incident_id);
@@ -291,12 +294,12 @@ export default function HomeScreen() {
 
     setActing(true);
     try {
-      await closeIncident(incidentId);
+      await leaveIncident(incidentId);
       setIncidentId(null);
       setMembers([]);
       setStatus('open');
     } catch (error) {
-      Alert.alert('Unable to close', error instanceof Error ? error.message : 'Unknown error');
+      Alert.alert('Unable to leave', error instanceof Error ? error.message : 'Unknown error');
     } finally {
       setActing(false);
     }
@@ -308,16 +311,9 @@ export default function HomeScreen() {
   );
 
   const othersCount = userId ? countOthers(members, userId) : 0;
-  const myMembership = members.find((member) => member.user_id === userId);
   const confronter = getConfronter(members);
-  const partners = countPartners(members);
   const isConfronter = confronter?.user_id === userId;
   const isPartner = members.some((member) => member.user_id === userId && member.role === 'partner');
-  const confronterLabel = confronter?.profile
-    ? `${confronter.profile.display_name}${
-        confronter.profile.shirt_color ? ` (${confronter.profile.shirt_color} shirt)` : ''
-      }`
-    : 'your confronter';
 
   if (loading) {
     return <LoadingState message="Loading Flint..." />;
@@ -362,9 +358,7 @@ export default function HomeScreen() {
               {(sheetState === 'ready' || sheetState === 'go') && isConfronter && sheetState === 'ready' && (
                 <Button disabled={acting} label="Go" onPress={handleGo} />
               )}
-              {(sheetState === 'ready' || sheetState === 'go') && (
-                <Button disabled={acting} label="Done" onPress={handleDone} />
-              )}
+              <Button disabled={acting} label="Leave" onPress={handleDone} />
             </>
           )}
         </Card>
@@ -386,21 +380,14 @@ export default function HomeScreen() {
         state={sheetState}
         othersCount={othersCount}
         status={status}
-        myRole={myMembership?.role}
         reporting={reporting}
         acting={acting}
-        showTransit={showTransit}
-        transitLine={transitLine}
-        direction={direction}
-        carNumber={carNumber}
-        confronterLabel={confronterLabel}
-        partnersCount={partners}
+        description={description}
+        members={members}
+        userId={userId}
         isConfronter={isConfronter}
         isPartner={isPartner}
-        onToggleTransit={() => setShowTransit((value) => !value)}
-        onTransitLineChange={setTransitLine}
-        onDirectionChange={setDirection}
-        onCarNumberChange={setCarNumber}
+        onDescriptionChange={setDescription}
         onReport={handleReport}
         onRole={handleRole}
         onGo={handleGo}
