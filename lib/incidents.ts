@@ -336,11 +336,15 @@ async function _refreshSummaryIfStale(incidentId: string): Promise<void> {
 
 // Delete an incident and everything attached to it, in one write.
 async function _deleteIncidentData(incidentId: string): Promise<void> {
+  // Delete the incident and its map dot first. Both writes are authorized by
+  // our membership record, so it must still exist while they run — deleting it
+  // in the same multi-path update makes the rules see us as a non-member and
+  // denies the write. Remove the members last, in a separate write.
   await update(ref(db), {
     [`incidents/${incidentId}`]: null,
-    [`incident_members/${incidentId}`]: null,
     [`incident_summaries/${incidentId}`]: null,
   });
+  await set(ref(db, `incident_members/${incidentId}`), null);
 }
 
 // Record one resolved nuisance for the permanent, anonymized metric.
@@ -543,20 +547,32 @@ export async function leaveIncident(incidentId: string): Promise<void> {
   await update(ref(db), updates);
 }
 
+export async function completeIncident(incidentId: string): Promise<void> {
+  const userId = auth.currentUser?.uid;
+  if (!userId) throw new Error('Not signed in');
+
+  // The confrontation is over. Tear the whole incident down for everyone —
+  // authorized because the caller is still a member at this instant.
+  await _deleteIncidentData(incidentId);
+}
+
 export async function getIncident(incidentId: string): Promise<Incident | null> {
   const snap = await get(ref(db, `incidents/${incidentId}`));
   if (!snap.exists()) return null;
   const d = snap.val();
+  const toMs = (v: unknown): number | null =>
+    typeof v === 'number' && Number.isFinite(v) ? v : null;
+  const goMs = toMs(d.go_at);
   return {
     id: incidentId,
     description: d.description ?? null,
     geohash: d.geohash,
     status: d.status,
-    expires_at: new Date(d.expires_at).toISOString(),
+    expires_at: new Date(toMs(d.expires_at) ?? Date.now()).toISOString(),
     last_lat: d.last_lat ?? null,
     last_lng: d.last_lng ?? null,
-    go_at: d.go_at ? new Date(d.go_at).toISOString() : null,
-    created_at: new Date(d.created_at).toISOString(),
+    go_at: goMs != null ? new Date(goMs).toISOString() : null,
+    created_at: new Date(toMs(d.created_at) ?? Date.now()).toISOString(),
   };
 }
 

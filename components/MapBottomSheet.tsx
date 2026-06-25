@@ -1,4 +1,5 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Animated, Keyboard, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Input } from '@/components/controls';
@@ -28,6 +29,7 @@ type Props = {
   onRole: (role: 'confronter' | 'partner') => void;
   onGo: () => void;
   onDone: () => void;
+  onComplete: () => void;
 };
 
 const SHIRT_HEX: Record<string, string> = {
@@ -64,8 +66,33 @@ export function MapBottomSheet({
   onRole,
   onGo,
   onDone,
+  onComplete,
 }: Props) {
   const insets = useSafeAreaInsets();
+
+  const keyboardOffset = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      Animated.timing(keyboardOffset, {
+        toValue: -(e.endCoordinates?.height ?? 0),
+        duration: e.duration || 250,
+        useNativeDriver: true,
+      }).start();
+    });
+    const hideSub = Keyboard.addListener(hideEvent, (e) => {
+      Animated.timing(keyboardOffset, {
+        toValue: 0,
+        duration: e.duration || 250,
+        useNativeDriver: true,
+      }).start();
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [keyboardOffset]);
 
   const roster = members.length > 0 && (
     <View style={styles.roster}>
@@ -83,7 +110,11 @@ export function MapBottomSheet({
   );
 
   return (
-    <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+    <Animated.View
+      style={[
+        styles.sheet,
+        { paddingBottom: Math.max(insets.bottom, 16), transform: [{ translateY: keyboardOffset }] },
+      ]}>
       {state === 'idle' && (
         <>
           <Title>Someone being loud?</Title>
@@ -158,15 +189,19 @@ export function MapBottomSheet({
           {state === 'ready' && isConfronter && (
             <Button disabled={acting} label={acting ? 'Starting...' : 'Go'} onPress={onGo} />
           )}
-          <Button
-            disabled={acting}
-            label="Leave"
-            onPress={onDone}
-            variant={state === 'ready' && isConfronter ? 'secondary' : 'primary'}
-          />
+          {state === 'go' ? (
+            <Button disabled={acting} label="Completed" onPress={onComplete} />
+          ) : (
+            <Button
+              disabled={acting}
+              label="Leave"
+              onPress={onDone}
+              variant={isConfronter ? 'secondary' : 'primary'}
+            />
+          )}
         </ScrollView>
       )}
-    </View>
+    </Animated.View>
   );
 }
 

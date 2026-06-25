@@ -11,6 +11,7 @@ import { isFirebaseConfigured } from '@/lib/firebase';
 import type { NearbyCluster } from '@/lib/map';
 import {
   leaveIncident,
+  completeIncident,
   countOthers,
   getConfronter,
   getIncident,
@@ -70,10 +71,21 @@ export default function HomeScreen() {
     : null;
 
   const refreshIncident = useCallback(async (activeIncidentId: string) => {
-    const [incident, nextMembers] = await Promise.all([
+    const result = await Promise.all([
       getIncident(activeIncidentId),
       getIncidentMembers(activeIncidentId),
-    ]);
+    ]).catch(() => null);
+
+    // A read can fail transiently while an incident is being torn down (our
+    // membership may already be gone). Treat that the same as "gone".
+    if (!result) {
+      setIncidentId(null);
+      setMembers([]);
+      setStatus('open');
+      prevMembersRef.current = [];
+      return;
+    }
+    const [incident, nextMembers] = result;
 
     // Incident is gone (closed and cleaned up) or explicitly closed:
     // drop back to the map.
@@ -305,6 +317,24 @@ export default function HomeScreen() {
     }
   }
 
+  async function handleComplete() {
+    if (!incidentId) {
+      return;
+    }
+
+    setActing(true);
+    try {
+      await completeIncident(incidentId);
+      setIncidentId(null);
+      setMembers([]);
+      setStatus('open');
+    } catch (error) {
+      Alert.alert('Unable to complete', error instanceof Error ? error.message : 'Unknown error');
+    } finally {
+      setActing(false);
+    }
+  }
+
   const sheetState = useMemo(
     () => deriveSheetState(incidentId, status, members, userId),
     [incidentId, status, members, userId],
@@ -392,6 +422,7 @@ export default function HomeScreen() {
         onRole={handleRole}
         onGo={handleGo}
         onDone={handleDone}
+        onComplete={handleComplete}
       />
     </View>
   );
