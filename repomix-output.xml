@@ -88,447 +88,54 @@ tsconfig.json
 <files>
 This section contains the contents of the repository's files.
 
-<file path="components/ClusterMarker.tsx">
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Marker } from 'react-native-maps';
-
-import type { NearbyCluster } from '@/lib/map';
-
-type Props = {
-  cluster: NearbyCluster;
-  onPress?: (incidentId: string) => void;
-};
-
-export function ClusterMarker({ cluster, onPress }: Props) {
-  return (
-    <Marker
-      coordinate={{ latitude: cluster.lat, longitude: cluster.lng }}
-      anchor={{ x: 0.5, y: 0.5 }}
-      tracksViewChanges={false}
-      onPress={() => onPress?.(cluster.incidentId)}>
-      <Pressable style={styles.wrapper} onPress={() => onPress?.(cluster.incidentId)}>
-        <View style={styles.dot} />
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{cluster.memberCount}</Text>
-        </View>
-      </Pressable>
-    </Marker>
-  );
+<file path=".claude/settings.json">
+{
+  "enabledPlugins": {
+    "expo@claude-plugins-official": true
+  }
 }
-
-const styles = StyleSheet.create({
-  wrapper: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#94a3b8',
-    borderWidth: 2,
-    borderColor: '#fff',
-    opacity: 0.85,
-  },
-  badge: {
-    position: 'absolute',
-    top: -2,
-    right: -2,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#1a1a2e',
-    borderWidth: 1,
-    borderColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  badgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-});
 </file>
 
-<file path="components/FlintMap.tsx">
-import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import MapView, { type Region } from 'react-native-maps';
+<file path="app/+html.tsx">
+import { ScrollViewStyleReset } from 'expo-router/html';
+import type { ReactNode } from 'react';
 
-import { ClusterMarker } from '@/components/ClusterMarker';
-import { MemberMarker } from '@/components/MemberMarker';
-import { fitMapRegion, type MapCoordinate, type NearbyCluster } from '@/lib/map';
-import type { IncidentMember } from '@/lib/types';
-
-type Props = {
-  userCoordinate: MapCoordinate | null;
-  members: IncidentMember[];
-  userId: string | null;
-  nearbyClusters: NearbyCluster[];
-  excludeIncidentId?: string | null;
-  onClusterPress?: (incidentId: string) => void;
-  followUser?: boolean;
-};
-
-export function FlintMap({
-  userCoordinate,
-  members,
-  userId,
-  nearbyClusters,
-  excludeIncidentId,
-  onClusterPress,
-  followUser = true,
-}: Props) {
-  const mapRef = useRef<MapView>(null);
-  const [userPanned, setUserPanned] = useState(false);
-
-  const memberMarkers = members
-    .filter((member) => member.user_id !== userId)
-    .map((member) => {
-      if (member.last_lat == null || member.last_lng == null) {
-        return null;
-      }
-      return (
-        <MemberMarker
-          key={member.user_id}
-          coordinate={{ latitude: member.last_lat, longitude: member.last_lng }}
-          role={member.role}
-        />
-      );
-    });
-
-  const visibleClusters = nearbyClusters.filter(
-    (cluster) => cluster.incidentId !== excludeIncidentId,
-  );
-
-  useEffect(() => {
-    if (!mapRef.current || userPanned) {
-      return;
-    }
-
-    const memberCoords = members
-      .map((m) =>
-        m.last_lat != null && m.last_lng != null
-          ? { latitude: m.last_lat, longitude: m.last_lng }
-          : null,
-      )
-      .filter((c): c is MapCoordinate => c != null);
-
-    const clusterCoords = visibleClusters.map((c) => ({
-      latitude: c.lat,
-      longitude: c.lng,
-    }));
-
-    const region = fitMapRegion([...memberCoords, ...clusterCoords], userCoordinate);
-    if (region) {
-      mapRef.current.animateToRegion(region, 400);
-    } else if (followUser && userCoordinate) {
-      mapRef.current.animateToRegion(
-        {
-          ...userCoordinate,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        },
-        400,
-      );
-    }
-  }, [members, visibleClusters, userCoordinate, followUser, userPanned]);
-
-  const initialRegion: Region = userCoordinate
-    ? { ...userCoordinate, latitudeDelta: 0.01, longitudeDelta: 0.01 }
-    : {
-        latitude: 40.7128,
-        longitude: -74.006,
-        latitudeDelta: 0.05,
-        longitudeDelta: 0.05,
-      };
-
+// This file is web-only and used to configure the root HTML for every
+// web page during static rendering.
+// The contents of this function only run in Node.js environments and
+// do not have access to the DOM or browser APIs.
+export default function Root({ children }: { children: ReactNode }) {
   return (
-    <View style={styles.container}>
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        initialRegion={initialRegion}
-        showsMyLocationButton={false}
-        onPanDrag={() => setUserPanned(true)}>
-        {userCoordinate && userId && (
-          <MemberMarker
-            coordinate={userCoordinate}
-            role="bothered"
-            isSelf
-          />
-        )}
-        {memberMarkers}
-        {visibleClusters.map((cluster) => (
-          <ClusterMarker key={cluster.incidentId} cluster={cluster} onPress={onClusterPress} />
-        ))}
-      </MapView>
+    <html lang="en">
+      <head>
+        <meta charSet="utf-8" />
+        <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
 
-      {userPanned && userCoordinate && (
-        <Pressable
-          style={styles.recenter}
-          onPress={() => {
-            setUserPanned(false);
-            mapRef.current?.animateToRegion(
-              {
-                ...userCoordinate,
-                latitudeDelta: 0.01,
-                longitudeDelta: 0.01,
-              },
-              400,
-            );
-          }}>
-          <Text style={styles.recenterText}>Recenter</Text>
-        </Pressable>
-      )}
-    </View>
+        {/*
+          Disable body scrolling on web. This makes ScrollView components work closer to how they do on native.
+          However, body scrolling is often nice to have for mobile web. If you want to enable it, remove this line.
+        */}
+        <ScrollViewStyleReset />
+
+        {/* Using raw CSS styles as an escape-hatch to ensure the background color never flickers in dark-mode. */}
+        <style dangerouslySetInnerHTML={{ __html: responsiveBackground }} />
+        {/* Add any additional <head> elements that you want globally available on web... */}
+      </head>
+      <body>{children}</body>
+    </html>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  map: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  recenter: {
-    position: 'absolute',
-    top: 56,
-    right: 16,
-    backgroundColor: '#1a1a2e',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  recenterText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-});
-</file>
-
-<file path="components/MapBottomSheet.tsx">
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-import { Button, Input } from '@/components/controls';
-import { Body, Subtitle, Title } from '@/components/ui';
-import {
-  CONFRONTER_SCRIPT,
-  DIRECTIONS,
-  PARTNER_SCRIPT,
-  type IncidentMember,
-  type IncidentStatus,
-} from '@/lib/types';
-
-export type SheetState = 'idle' | 'waiting' | 'roles' | 'ready' | 'go';
-
-type Props = {
-  state: SheetState;
-  othersCount: number;
-  status: IncidentStatus;
-  myRole?: string;
-  reporting: boolean;
-  acting: boolean;
-  showTransit: boolean;
-  transitLine: string;
-  direction: string;
-  carNumber: string;
-  confronterLabel: string;
-  partnersCount: number;
-  isConfronter: boolean;
-  isPartner: boolean;
-  onToggleTransit: () => void;
-  onTransitLineChange: (value: string) => void;
-  onDirectionChange: (value: string) => void;
-  onCarNumberChange: (value: string) => void;
-  onReport: () => void;
-  onRole: (role: 'confronter' | 'partner') => void;
-  onGo: () => void;
-  onDone: () => void;
-};
-
-export function MapBottomSheet({
-  state,
-  othersCount,
-  status,
-  myRole,
-  reporting,
-  acting,
-  showTransit,
-  transitLine,
-  direction,
-  carNumber,
-  confronterLabel,
-  partnersCount,
-  isConfronter,
-  isPartner,
-  onToggleTransit,
-  onTransitLineChange,
-  onDirectionChange,
-  onCarNumberChange,
-  onReport,
-  onRole,
-  onGo,
-  onDone,
-}: Props) {
-  const insets = useSafeAreaInsets();
-
-  return (
-    <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-      {state === 'idle' && (
-        <>
-          <Title>Someone being loud?</Title>
-          <Subtitle>
-            Tap report to check in. Nearby dots show others bothered by loud audio in your area.
-          </Subtitle>
-          <Button
-            disabled={reporting}
-            label={reporting ? 'Checking in...' : 'Report nuisance'}
-            onPress={onReport}
-          />
-          <Button
-            label={showTransit ? 'Hide transit details' : 'On transit? Add details'}
-            onPress={onToggleTransit}
-            variant="secondary"
-          />
-          {showTransit && (
-            <View style={styles.transitSection}>
-              <Input
-                label="Transit line (optional)"
-                onChangeText={onTransitLineChange}
-                placeholder="N, 4, M14A..."
-                value={transitLine}
-              />
-              <Body>Direction (optional)</Body>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-                {DIRECTIONS.map((item) => (
-                  <Button
-                    key={item}
-                    label={item}
-                    onPress={() => onDirectionChange(item)}
-                    variant={direction === item ? 'primary' : 'secondary'}
-                  />
-                ))}
-              </ScrollView>
-              <Input
-                keyboardType="numeric"
-                label="Car # (optional)"
-                onChangeText={onCarNumberChange}
-                placeholder="If visible"
-                value={carNumber}
-              />
-            </View>
-          )}
-        </>
-      )}
-
-      {state === 'waiting' && (
-        <>
-          <Text style={styles.count}>{othersCount}</Text>
-          <Body>
-            {othersCount === 0
-              ? 'No one else nearby yet. Stay on the map — others may join.'
-              : othersCount === 1
-                ? 'One other person nearby also bothered.'
-                : `${othersCount} others nearby also bothered.`}
-          </Body>
-          <Body>Status: {status}</Body>
-          {myRole && myRole !== 'bothered' && <Body>Your role: {myRole}</Body>}
-        </>
-      )}
-
-      {state === 'roles' && (
-        <>
-          <Title>Choose a role</Title>
-          <Body>When you are ready to speak up together.</Body>
-          <Button label="I'll speak first" onPress={() => onRole('confronter')} />
-          <Button label="I'll back them up" onPress={() => onRole('partner')} variant="secondary" />
-        </>
-      )}
-
-      {(state === 'ready' || state === 'go') && (
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-          <Title>{state === 'go' ? 'Speak up now' : 'Ready together'}</Title>
-          <Subtitle>
-            {state === 'go'
-              ? isPartner
-                ? 'Back them up now with the line below.'
-                : isConfronter
-                  ? 'Say your line calmly and clearly.'
-                  : 'The group is speaking up now.'
-              : 'Review the script. The confronter starts when everyone is ready.'}
-          </Subtitle>
-          <Body>Confronter: {confronterLabel}</Body>
-          <Body>Partners ready: {String(partnersCount)}</Body>
-          <Body>Confronter says:</Body>
-          <Subtitle>{CONFRONTER_SCRIPT}</Subtitle>
-          <Body>Partners say:</Body>
-          <Subtitle>{PARTNER_SCRIPT}</Subtitle>
-          {state === 'go' && isPartner && (
-            <>
-              <Title>Back them up now</Title>
-              <Subtitle>{PARTNER_SCRIPT}</Subtitle>
-            </>
-          )}
-          {state === 'ready' && isConfronter && (
-            <Button disabled={acting} label={acting ? 'Starting...' : 'Go'} onPress={onGo} />
-          )}
-          <Button
-            disabled={acting}
-            label="Done"
-            onPress={onDone}
-            variant={state === 'ready' && isConfronter ? 'secondary' : 'primary'}
-          />
-        </ScrollView>
-      )}
-    </View>
-  );
+const responsiveBackground = `
+body {
+  background-color: #fff;
 }
-
-const styles = StyleSheet.create({
-  sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#1a1a2e',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    gap: 12,
-    borderTopWidth: 1,
-    borderColor: '#334155',
-    maxHeight: '45%',
-  },
-  count: {
-    color: '#fff',
-    fontSize: 32,
-    fontWeight: '700',
-  },
-  transitSection: {
-    gap: 12,
-  },
-  chips: {
-    gap: 8,
-  },
-  scroll: {
-    maxHeight: 280,
-  },
-  scrollContent: {
-    gap: 12,
-    paddingBottom: 8,
-  },
-});
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: #000;
+  }
+}`;
 </file>
 
 <file path="components/MemberMarker.tsx">
@@ -582,115 +189,248 @@ const styles = StyleSheet.create({
 });
 </file>
 
-<file path="lib/map.ts">
-import type { LatLng, Region } from 'react-native-maps';
+<file path="components/ui.tsx">
+import { StyleSheet, Text, View, type ViewProps } from 'react-native';
+import type { ReactNode } from 'react';
 
-import type { IncidentMember, MemberRole } from './types';
-
-export type MapCoordinate = {
-  latitude: number;
-  longitude: number;
-};
-
-export type NearbyCluster = {
-  incidentId: string;
-  lat: number;
-  lng: number;
-  memberCount: number;
-};
-
-export type IncidentContext = {
-  transitLine?: string;
-  direction?: string;
-  carNumber?: string;
-};
-
-export function markerColorForRole(role: MemberRole | 'self'): string {
-  switch (role) {
-    case 'self':
-      return '#3b82f6';
-    case 'confronter':
-      return '#e94560';
-    case 'partner':
-      return '#64748b';
-    default:
-      return '#f59e0b';
-  }
+export function Screen({ style, ...props }: ViewProps) {
+  return <View style={[styles.screen, style]} {...props} />;
 }
 
-export function toCoordinate(lat: number | null, lng: number | null): MapCoordinate | null {
-  if (lat == null || lng == null) {
+export function Title({ children }: { children: ReactNode }) {
+  return <Text style={styles.title}>{children}</Text>;
+}
+
+export function Subtitle({ children }: { children: ReactNode }) {
+  return <Text style={styles.subtitle}>{children}</Text>;
+}
+
+export function Body({ children }: { children: ReactNode }) {
+  return <Text style={styles.body}>{children}</Text>;
+}
+
+export function Card({ style, ...props }: ViewProps) {
+  return <View style={[styles.card, style]} {...props} />;
+}
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#16213e',
+    padding: 24,
+    gap: 16,
+  },
+  title: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: '700',
+  },
+  subtitle: {
+    color: '#cbd5e1',
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  body: {
+    color: '#e2e8f0',
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  card: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+});
+</file>
+
+<file path="lib/auth.ts">
+// lib/auth.ts
+import {
+  signInAnonymously,
+  onAuthStateChanged,
+} from 'firebase/auth';
+import {
+  ref,
+  set,
+  get,
+} from 'firebase/database';
+import { auth, db } from './firebase';
+import type { Profile } from './types';
+
+export async function ensureAnonymousSession(): Promise<string> {
+  if (auth.currentUser) {
+    return auth.currentUser.uid;
+  }
+  const credential = await signInAnonymously(auth);
+  return credential.user.uid;
+}
+
+export async function getCurrentUserId(): Promise<string | null> {
+  return auth.currentUser?.uid ?? null;
+}
+
+export async function getProfile(userId: string): Promise<Profile | null> {
+  const snap = await get(ref(db, `profiles/${userId}`));
+  if (!snap.exists()) {
     return null;
   }
-  return { latitude: lat, longitude: lng };
-}
-
-export function membersWithCoordinates(
-  members: IncidentMember[],
-  userId: string | null,
-): Array<{ member: IncidentMember; coordinate: MapCoordinate; isSelf: boolean }> {
-  return members
-    .map((member) => {
-      const coordinate = toCoordinate(member.last_lat, member.last_lng);
-      if (!coordinate) {
-        return null;
-      }
-      return {
-        member,
-        coordinate,
-        isSelf: member.user_id === userId,
-      };
-    })
-    .filter((item): item is NonNullable<typeof item> => item != null);
-}
-
-export function clusterCoordinates(clusters: NearbyCluster[]): MapCoordinate[] {
-  return clusters.map((cluster) => ({
-    latitude: cluster.lat,
-    longitude: cluster.lng,
-  }));
-}
-
-export function fitMapRegion(
-  coordinates: MapCoordinate[],
-  userCoordinate?: MapCoordinate | null,
-): Region | null {
-  const all = [...coordinates];
-  if (userCoordinate) {
-    all.push(userCoordinate);
-  }
-  if (all.length === 0) {
-    return null;
-  }
-
-  if (all.length === 1) {
-    return {
-      ...all[0],
-      latitudeDelta: 0.01,
-      longitudeDelta: 0.01,
-    };
-  }
-
-  const lats = all.map((c) => c.latitude);
-  const lngs = all.map((c) => c.longitude);
-  const minLat = Math.min(...lats);
-  const maxLat = Math.max(...lats);
-  const minLng = Math.min(...lngs);
-  const maxLng = Math.max(...lngs);
-  const latDelta = Math.max((maxLat - minLat) * 1.6, 0.008);
-  const lngDelta = Math.max((maxLng - minLng) * 1.6, 0.008);
-
+  const data = snap.val();
   return {
-    latitude: (minLat + maxLat) / 2,
-    longitude: (minLng + maxLng) / 2,
-    latitudeDelta: latDelta,
-    longitudeDelta: lngDelta,
+    id: userId,
+    display_name: data.display_name,
+    shirt_color: data.shirt_color ?? null,
   };
 }
 
-export function latLngToMapCoordinate(lat: number, lng: number): LatLng {
-  return { latitude: lat, longitude: lng };
+export async function saveProfile(
+  userId: string,
+  displayName: string,
+  shirtColor: string | null,
+): Promise<Profile> {
+  const profile = {
+    display_name: displayName.trim(),
+    shirt_color: shirtColor,
+  };
+  await set(ref(db, `profiles/${userId}`), profile);
+  return { id: userId, ...profile };
 }
+</file>
+
+<file path="lib/firebase.ts">
+// lib/firebase.ts
+import { initializeApp, getApps } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { getDatabase } from 'firebase/database';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCVhBH5EYWauC6_8sIAxdUkQvjVRAlULy4",
+  authDomain: "flint-app-596cd.firebaseapp.com",
+  databaseURL: "https://flint-app-596cd-default-rtdb.firebaseio.com",
+  projectId: "flint-app-596cd",
+  storageBucket: "flint-app-596cd.firebasestorage.app",
+  messagingSenderId: "603163397524",
+  appId: "1:603163397524:web:226188fb2ed19b82dd5381",
+  measurementId: "G-NTEN1KKT25"
+};
+
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+
+export const auth = getAuth(app);
+export const db = getDatabase(app);
+export const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.databaseURL);
+</file>
+
+<file path="lib/location.ts">
+import * as Location from 'expo-location';
+
+export type LocationPing = {
+  lat: number;
+  lng: number;
+  heading: number | null;
+  speed: number | null;
+};
+
+export async function requestLocationPermission(): Promise<boolean> {
+  const { status } = await Location.requestForegroundPermissionsAsync();
+  return status === Location.PermissionStatus.GRANTED;
+}
+
+export async function getCurrentLocationPing(): Promise<LocationPing> {
+  const position = await Location.getCurrentPositionAsync({
+    accuracy: Location.Accuracy.High,
+  });
+
+  return {
+    lat: position.coords.latitude,
+    lng: position.coords.longitude,
+    heading: position.coords.heading ?? null,
+    speed: position.coords.speed ?? null,
+  };
+}
+
+export function startLocationPingLoop(
+  onPing: (ping: LocationPing) => void,
+  intervalMs = 5000,
+): () => void {
+  let active = true;
+
+  const tick = async () => {
+    if (!active) {
+      return;
+    }
+
+    try {
+      const ping = await getCurrentLocationPing();
+      onPing(ping);
+    } catch {
+      // Location unavailable; skip this tick.
+    }
+  };
+
+  void tick();
+  const interval = setInterval(() => {
+    void tick();
+  }, intervalMs);
+
+  return () => {
+    active = false;
+    clearInterval(interval);
+  };
+}
+
+const BASE32 = '0123456789bcdefghjkmnpqrstuvwxyz';
+
+export function encodeGeohash(lat: number, lng: number, precision = 7): string {
+  let minLat = -90;
+  let maxLat = 90;
+  let minLng = -180;
+  let maxLng = 180;
+  let hash = '';
+  let bit = 0;
+  let ch = 0;
+  let isLng = true;
+
+  while (hash.length < precision) {
+    if (isLng) {
+      const mid = (minLng + maxLng) / 2;
+      if (lng >= mid) {
+        ch = (ch << 1) + 1;
+        minLng = mid;
+      } else {
+        ch = (ch << 1) + 0;
+        maxLng = mid;
+      }
+    } else {
+      const mid = (minLat + maxLat) / 2;
+      if (lat >= mid) {
+        ch = (ch << 1) + 1;
+        minLat = mid;
+      } else {
+        ch = (ch << 1) + 0;
+        maxLat = mid;
+      }
+    }
+
+    isLng = !isLng;
+    bit += 1;
+
+    if (bit === 5) {
+      hash += BASE32[ch];
+      bit = 0;
+      ch = 0;
+    }
+  }
+
+  return hash;
+}
+</file>
+
+<file path=".env.example">
+# Firebase config is set directly in lib/firebase.ts
+# No .env needed for Firebase in Expo
 </file>
 
 <file path="babel.config.js">
@@ -703,54 +443,32 @@ module.exports = function (api) {
 };
 </file>
 
-<file path=".claude/settings.json">
-{
-  "enabledPlugins": {
-    "expo@claude-plugins-official": true
-  }
-}
+<file path="CLAUDE.md">
+@AGENTS.md
 </file>
 
-<file path="app/+html.tsx">
-import { ScrollViewStyleReset } from 'expo-router/html';
-import type { ReactNode } from 'react';
+<file path="LICENSE">
+The MIT License (MIT)
 
-// This file is web-only and used to configure the root HTML for every
-// web page during static rendering.
-// The contents of this function only run in Node.js environments and
-// do not have access to the DOM or browser APIs.
-export default function Root({ children }: { children: ReactNode }) {
-  return (
-    <html lang="en">
-      <head>
-        <meta charSet="utf-8" />
-        <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)
 
-        {/*
-          Disable body scrolling on web. This makes ScrollView components work closer to how they do on native.
-          However, body scrolling is often nice to have for mobile web. If you want to enable it, remove this line.
-        */}
-        <ScrollViewStyleReset />
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-        {/* Using raw CSS styles as an escape-hatch to ensure the background color never flickers in dark-mode. */}
-        <style dangerouslySetInnerHTML={{ __html: responsiveBackground }} />
-        {/* Add any additional <head> elements that you want globally available on web... */}
-      </head>
-      <body>{children}</body>
-    </html>
-  );
-}
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-const responsiveBackground = `
-body {
-  background-color: #fff;
-}
-@media (prefers-color-scheme: dark) {
-  body {
-    background-color: #000;
-  }
-}`;
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 </file>
 
 <file path="app/+not-found.tsx">
@@ -792,427 +510,6 @@ const styles = StyleSheet.create({
   linkText: {
     fontSize: 14,
     color: '#2e78b7',
-  },
-});
-</file>
-
-<file path="app/index.tsx">
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Platform, StyleSheet, View } from 'react-native';
-
-import { FlintMap } from '@/components/FlintMap';
-import { Button, LoadingState } from '@/components/controls';
-import { MapBottomSheet, type SheetState } from '@/components/MapBottomSheet';
-import { Body, Card, Screen, Subtitle, Title } from '@/components/ui';
-import { ensureAnonymousSession, getCurrentUserId, getProfile } from '@/lib/auth';
-import { isFirebaseConfigured } from '@/lib/firebase';
-import type { NearbyCluster } from '@/lib/map';
-import {
-  closeIncident,
-  countOthers,
-  countPartners,
-  getConfronter,
-  getIncident,
-  getIncidentMembers,
-  isReadyGroup,
-  joinIncident,
-  pingIncident,
-  reportNuisance,
-  setMemberRole,
-  subscribeToIncident,
-  subscribeToNearbyIncidents,
-  triggerGo,
-} from '@/lib/incidents';
-import {
-  getCurrentLocationPing,
-  requestLocationPermission,
-  startLocationPingLoop,
-  type LocationPing,
-} from '@/lib/location';
-import type { IncidentMember, IncidentStatus } from '@/lib/types';
-
-function buildContext(transitLine: string, direction: string, carNumber: string) {
-  return {
-    transitLine: transitLine.trim() || undefined,
-    direction: direction.trim() || undefined,
-    carNumber: carNumber.trim() || undefined,
-  };
-}
-
-function deriveSheetState(
-  incidentId: string | null,
-  status: IncidentStatus,
-  members: IncidentMember[],
-  userId: string | null,
-): SheetState {
-  if (!incidentId) return 'idle';
-  if (status === 'go') return 'go';
-  if (status === 'ready') return 'ready';
-
-  const othersCount = userId ? countOthers(members, userId) : 0;
-  const ready = isReadyGroup(members);
-  if (othersCount >= 1 && !ready) return 'roles';
-  return 'waiting';
-}
-
-export default function HomeScreen() {
-  const router = useRouter();
-  const params = useLocalSearchParams<{ incidentId?: string }>();
-  const paramIncidentId = typeof params.incidentId === 'string' ? params.incidentId : null;
-
-  const [loading, setLoading] = useState(true);
-  const [reporting, setReporting] = useState(false);
-  const [acting, setActing] = useState(false);
-  const [showTransit, setShowTransit] = useState(false);
-  const [transitLine, setTransitLine] = useState('');
-  const [direction, setDirection] = useState('');
-  const [carNumber, setCarNumber] = useState('');
-  const [incidentId, setIncidentId] = useState<string | null>(paramIncidentId);
-  const [members, setMembers] = useState<IncidentMember[]>([]);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [status, setStatus] = useState<IncidentStatus>('open');
-  const [userPing, setUserPing] = useState<LocationPing | null>(null);
-  const [nearbyClusters, setNearbyClusters] = useState<NearbyCluster[]>([]);
-
-  const userCoordinate = userPing
-    ? { latitude: userPing.lat, longitude: userPing.lng }
-    : null;
-
-  const refreshIncident = useCallback(async (activeIncidentId: string) => {
-    const [incident, nextMembers] = await Promise.all([
-      getIncident(activeIncidentId),
-      getIncidentMembers(activeIncidentId),
-    ]);
-
-    if (incident) {
-      setStatus(incident.status);
-      if (incident.status === 'closed') {
-        setIncidentId(null);
-        setMembers([]);
-        setStatus('open');
-      }
-    }
-
-    setMembers(nextMembers);
-  }, []);
-
-  useEffect(() => {
-    if (paramIncidentId) {
-      setIncidentId(paramIncidentId);
-    }
-  }, [paramIncidentId]);
-
-  useEffect(() => {
-    async function bootstrap() {
-      if (!isFirebaseConfigured) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        await ensureAnonymousSession();
-        const id = await getCurrentUserId();
-        if (!id) {
-          throw new Error('Unable to start anonymous session');
-        }
-
-        const profile = await getProfile(id);
-        if (!profile) {
-          router.replace('/setup');
-          return;
-        }
-
-        setUserId(id);
-        const granted = await requestLocationPermission();
-        if (granted) {
-          const ping = await getCurrentLocationPing();
-          setUserPing(ping);
-        }
-      } catch (error) {
-        Alert.alert('Startup failed', error instanceof Error ? error.message : 'Unknown error');
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    void bootstrap();
-  }, [router]);
-
-  useEffect(() => {
-    if (!incidentId) {
-      return;
-    }
-
-    void refreshIncident(incidentId);
-    const unsubscribeRealtime = subscribeToIncident(incidentId, () => {
-      void refreshIncident(incidentId);
-    });
-
-    return unsubscribeRealtime;
-  }, [incidentId, refreshIncident]);
-
-  useEffect(() => {
-    if (!userPing) {
-      return;
-    }
-
-    const radius = incidentId ? 200 : 200;
-    const unsubscribe = subscribeToNearbyIncidents(
-      userPing.lat,
-      userPing.lng,
-      radius,
-      setNearbyClusters,
-    );
-
-    return unsubscribe;
-  }, [userPing?.lat, userPing?.lng, incidentId]);
-
-  useEffect(() => {
-    const intervalMs = incidentId ? 5000 : 10000;
-    const stopPingLoop = startLocationPingLoop((ping) => {
-      setUserPing(ping);
-
-      if (!incidentId) {
-        return;
-      }
-
-      void pingIncident(incidentId, ping.lat, ping.lng, ping.heading, ping.speed).catch(() => {
-        // Ignore transient ping failures.
-      });
-    }, intervalMs);
-
-    return stopPingLoop;
-  }, [incidentId]);
-
-  async function ensureLocation(): Promise<LocationPing | null> {
-    const granted = await requestLocationPermission();
-    if (!granted) {
-      Alert.alert('Location required', 'Enable location to find nearby people bothered by loud audio.');
-      return null;
-    }
-
-    const ping = await getCurrentLocationPing();
-    setUserPing(ping);
-    return ping;
-  }
-
-  async function handleReport() {
-    setReporting(true);
-    try {
-      const ping = await ensureLocation();
-      if (!ping) {
-        return;
-      }
-
-      const result = await reportNuisance(
-        ping.lat,
-        ping.lng,
-        ping.heading,
-        ping.speed,
-        buildContext(transitLine, direction, carNumber),
-      );
-
-      setIncidentId(result.incident_id);
-      setStatus(result.status);
-      await refreshIncident(result.incident_id);
-    } catch (error) {
-      Alert.alert('Report failed', error instanceof Error ? error.message : 'Unknown error');
-    } finally {
-      setReporting(false);
-    }
-  }
-
-  async function handleJoinCluster(targetIncidentId: string) {
-    if (incidentId) {
-      return;
-    }
-
-    setReporting(true);
-    try {
-      const ping = await ensureLocation();
-      if (!ping) {
-        return;
-      }
-
-      const result = await joinIncident(
-        targetIncidentId,
-        ping.lat,
-        ping.lng,
-        ping.heading,
-        ping.speed,
-        buildContext(transitLine, direction, carNumber),
-      );
-
-      setIncidentId(result.incident_id);
-      setStatus(result.status);
-      await refreshIncident(result.incident_id);
-    } catch (error) {
-      Alert.alert('Unable to join', error instanceof Error ? error.message : 'Unknown error');
-    } finally {
-      setReporting(false);
-    }
-  }
-
-  async function handleRole(role: 'confronter' | 'partner') {
-    if (!incidentId) {
-      return;
-    }
-
-    try {
-      await setMemberRole(incidentId, role);
-      await refreshIncident(incidentId);
-    } catch (error) {
-      Alert.alert('Role unavailable', error instanceof Error ? error.message : 'Unknown error');
-    }
-  }
-
-  async function handleGo() {
-    if (!incidentId) {
-      return;
-    }
-
-    setActing(true);
-    try {
-      await triggerGo(incidentId);
-      await refreshIncident(incidentId);
-    } catch (error) {
-      Alert.alert('Unable to start', error instanceof Error ? error.message : 'Unknown error');
-    } finally {
-      setActing(false);
-    }
-  }
-
-  async function handleDone() {
-    if (!incidentId) {
-      return;
-    }
-
-    setActing(true);
-    try {
-      await closeIncident(incidentId);
-      setIncidentId(null);
-      setMembers([]);
-      setStatus('open');
-    } catch (error) {
-      Alert.alert('Unable to close', error instanceof Error ? error.message : 'Unknown error');
-    } finally {
-      setActing(false);
-    }
-  }
-
-  const sheetState = useMemo(
-    () => deriveSheetState(incidentId, status, members, userId),
-    [incidentId, status, members, userId],
-  );
-
-  const othersCount = userId ? countOthers(members, userId) : 0;
-  const myMembership = members.find((member) => member.user_id === userId);
-  const confronter = getConfronter(members);
-  const partners = countPartners(members);
-  const isConfronter = confronter?.user_id === userId;
-  const isPartner = members.some((member) => member.user_id === userId && member.role === 'partner');
-  const confronterLabel = confronter?.profile
-    ? `${confronter.profile.display_name}${
-        confronter.profile.shirt_color ? ` (${confronter.profile.shirt_color} shirt)` : ''
-      }`
-    : 'your confronter';
-
-  if (loading) {
-    return <LoadingState message="Loading Flint..." />;
-  }
-
-  if (!isFirebaseConfigured) {
-    return (
-      <Screen>
-        <Title>Configure Firebase</Title>
-        <Subtitle>Add your Firebase config to lib/firebase.ts and restart Expo.</Subtitle>
-      </Screen>
-    );
-  }
-
-  if (Platform.OS === 'web') {
-    return (
-      <Screen>
-        <Title>Map view unavailable on web</Title>
-        <Subtitle>Use Expo Go on iOS or Android for the live map experience.</Subtitle>
-        <Card>
-          <Body>Nearby reports: {nearbyClusters.length}</Body>
-          {!incidentId ? (
-            <Button
-              disabled={reporting}
-              label={reporting ? 'Checking in...' : 'Report nuisance'}
-              onPress={handleReport}
-            />
-          ) : (
-            <>
-              <Body>Others nearby: {othersCount}</Body>
-              <Body>Status: {status}</Body>
-              {sheetState === 'roles' && (
-                <>
-                  <Button label="I'll speak first" onPress={() => handleRole('confronter')} />
-                  <Button
-                    label="I'll back them up"
-                    onPress={() => handleRole('partner')}
-                    variant="secondary"
-                  />
-                </>
-              )}
-              {(sheetState === 'ready' || sheetState === 'go') && isConfronter && sheetState === 'ready' && (
-                <Button disabled={acting} label="Go" onPress={handleGo} />
-              )}
-              {(sheetState === 'ready' || sheetState === 'go') && (
-                <Button disabled={acting} label="Done" onPress={handleDone} />
-              )}
-            </>
-          )}
-        </Card>
-      </Screen>
-    );
-  }
-
-  return (
-    <View style={styles.container}>
-      <FlintMap
-        userCoordinate={userCoordinate}
-        members={members}
-        userId={userId}
-        nearbyClusters={nearbyClusters}
-        excludeIncidentId={incidentId}
-        onClusterPress={handleJoinCluster}
-      />
-      <MapBottomSheet
-        state={sheetState}
-        othersCount={othersCount}
-        status={status}
-        myRole={myMembership?.role}
-        reporting={reporting}
-        acting={acting}
-        showTransit={showTransit}
-        transitLine={transitLine}
-        direction={direction}
-        carNumber={carNumber}
-        confronterLabel={confronterLabel}
-        partnersCount={partners}
-        isConfronter={isConfronter}
-        isPartner={isPartner}
-        onToggleTransit={() => setShowTransit((value) => !value)}
-        onTransitLineChange={setTransitLine}
-        onDirectionChange={setDirection}
-        onCarNumberChange={setCarNumber}
-        onReport={handleReport}
-        onRole={handleRole}
-        onGo={handleGo}
-        onDone={handleDone}
-      />
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#16213e',
   },
 });
 </file>
@@ -1413,14 +710,16 @@ type InputProps = {
   onChangeText: (value: string) => void;
   placeholder?: string;
   keyboardType?: 'default' | 'numeric';
+  maxLength?: number;
 };
 
-export function Input({ label, value, onChangeText, placeholder, keyboardType = 'default' }: InputProps) {
+export function Input({ label, value, onChangeText, placeholder, keyboardType = 'default', maxLength }: InputProps) {
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
         keyboardType={keyboardType}
+        maxLength={maxLength}
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor="#64748b"
@@ -1497,868 +796,423 @@ const styles = StyleSheet.create({
 });
 </file>
 
-<file path="components/ui.tsx">
-import { StyleSheet, Text, View, type ViewProps } from 'react-native';
-import type { ReactNode } from 'react';
+<file path="components/FlintMap.tsx">
+import { useEffect, useRef, useState } from 'react';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import MapView, { type Region } from 'react-native-maps';
 
-export function Screen({ style, ...props }: ViewProps) {
-  return <View style={[styles.screen, style]} {...props} />;
-}
+import { ClusterMarker } from '@/components/ClusterMarker';
+import { Button } from '@/components/controls';
+import { MemberMarker } from '@/components/MemberMarker';
+import { fitMapRegion, type MapCoordinate, type NearbyCluster } from '@/lib/map';
+import type { IncidentMember } from '@/lib/types';
 
-export function Title({ children }: { children: ReactNode }) {
-  return <Text style={styles.title}>{children}</Text>;
-}
+type Props = {
+  userCoordinate: MapCoordinate | null;
+  members: IncidentMember[];
+  userId: string | null;
+  nearbyClusters: NearbyCluster[];
+  excludeIncidentId?: string | null;
+  onClusterPress?: (incidentId: string) => void;
+  followUser?: boolean;
+};
 
-export function Subtitle({ children }: { children: ReactNode }) {
-  return <Text style={styles.subtitle}>{children}</Text>;
-}
+export function FlintMap({
+  userCoordinate,
+  members,
+  userId,
+  nearbyClusters,
+  excludeIncidentId,
+  onClusterPress,
+  followUser = true,
+}: Props) {
+  const mapRef = useRef<MapView>(null);
+  const [userPanned, setUserPanned] = useState(false);
+  const [previewIncidentId, setPreviewIncidentId] = useState<string | null>(null);
+  const [previewPoint, setPreviewPoint] = useState<{ x: number; y: number } | null>(null);
+  const previewOpenedAt = useRef(0);
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
-export function Body({ children }: { children: ReactNode }) {
-  return <Text style={styles.body}>{children}</Text>;
-}
+  const memberMarkers = members
+    .filter((member) => member.user_id !== userId)
+    .map((member) => {
+      if (member.last_lat == null || member.last_lng == null) {
+        return null;
+      }
+      return (
+        <MemberMarker
+          key={member.user_id}
+          coordinate={{ latitude: member.last_lat, longitude: member.last_lng }}
+          role={member.role}
+        />
+      );
+    });
 
-export function Card({ style, ...props }: ViewProps) {
-  return <View style={[styles.card, style]} {...props} />;
+  const visibleClusters = nearbyClusters.filter(
+    (cluster) => cluster.incidentId !== excludeIncidentId,
+  );
+
+  const previewCluster = previewIncidentId
+    ? visibleClusters.find((cluster) => cluster.incidentId === previewIncidentId) ?? null
+    : null;
+
+  const dismissPreview = () => {
+    setPreviewIncidentId(null);
+    setPreviewPoint(null);
+  };
+
+  // Tapping the map dismisses the card — but ignore the tap that just opened it
+  // (on some platforms a marker tap also fires the map's onPress).
+  const handleMapPress = () => {
+    if (Date.now() - previewOpenedAt.current > 300) {
+      dismissPreview();
+    }
+  };
+
+  // Anchor the preview card over the tapped dot using its on-screen position.
+  const handleDotPress = async (cluster: NearbyCluster) => {
+    previewOpenedAt.current = Date.now();
+    setPreviewIncidentId(cluster.incidentId);
+    setPreviewPoint(null);
+    const fallback = { x: screenWidth / 2, y: 0 };
+    if (!mapRef.current) {
+      setPreviewPoint(fallback);
+      return;
+    }
+    try {
+      const point = await mapRef.current.pointForCoordinate({
+        latitude: cluster.lat,
+        longitude: cluster.lng,
+      });
+      setPreviewPoint(point);
+    } catch {
+      setPreviewPoint(fallback);
+    }
+  };
+
+  // Position the card above the dot once we know its screen point; until then
+  // (or if the lookup fails) fall back to a fixed spot so it always shows.
+  const previewCardPosition = !previewPoint
+    ? { top: 80, left: Math.max(8, (screenWidth - 230) / 2) }
+    : {
+        left: Math.max(8, Math.min(previewPoint.x - 115, screenWidth - 238)),
+        ...(previewPoint.y < 180
+          ? { top: previewPoint.y + 26 }
+          : { bottom: screenHeight - previewPoint.y + 26 }),
+      };
+
+  useEffect(() => {
+    if (!mapRef.current || userPanned || previewIncidentId) {
+      return;
+    }
+
+    const memberCoords = members
+      .map((m) =>
+        m.last_lat != null && m.last_lng != null
+          ? { latitude: m.last_lat, longitude: m.last_lng }
+          : null,
+      )
+      .filter((c): c is MapCoordinate => c != null);
+
+    const clusterCoords = visibleClusters.map((c) => ({
+      latitude: c.lat,
+      longitude: c.lng,
+    }));
+
+    const region = fitMapRegion([...memberCoords, ...clusterCoords], userCoordinate);
+    if (region) {
+      mapRef.current.animateToRegion(region, 400);
+    } else if (followUser && userCoordinate) {
+      mapRef.current.animateToRegion(
+        {
+          ...userCoordinate,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        },
+        400,
+      );
+    }
+  }, [members, visibleClusters, userCoordinate, followUser, userPanned, previewIncidentId]);
+
+  const initialRegion: Region = userCoordinate
+    ? { ...userCoordinate, latitudeDelta: 0.01, longitudeDelta: 0.01 }
+    : {
+        latitude: 40.7128,
+        longitude: -74.006,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      };
+
+  return (
+    <View style={styles.container}>
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        initialRegion={initialRegion}
+        showsMyLocationButton={false}
+        onPress={handleMapPress}
+        onPanDrag={() => {
+          setUserPanned(true);
+          dismissPreview();
+        }}>
+        {userCoordinate && userId && (
+          <MemberMarker
+            coordinate={userCoordinate}
+            role="bothered"
+            isSelf
+          />
+        )}
+        {memberMarkers}
+        {visibleClusters.map((cluster) => (
+          <ClusterMarker
+            key={cluster.incidentId}
+            cluster={cluster}
+            onPress={() => handleDotPress(cluster)}
+          />
+        ))}
+      </MapView>
+
+      {userPanned && userCoordinate && (
+        <Pressable
+          style={styles.recenter}
+          onPress={() => {
+            setUserPanned(false);
+            mapRef.current?.animateToRegion(
+              {
+                ...userCoordinate,
+                latitudeDelta: 0.01,
+                longitudeDelta: 0.01,
+              },
+              400,
+            );
+          }}>
+          <Text style={styles.recenterText}>Recenter</Text>
+        </Pressable>
+      )}
+
+      {previewCluster && previewPoint && (
+        <View style={[styles.previewCard, previewCardPosition]}>
+          <Text style={styles.previewDesc} numberOfLines={2}>
+            {previewCluster.description || 'Loud audio nearby'}
+          </Text>
+          <Text style={styles.previewMeta}>
+            {previewCluster.memberCount}{' '}
+            {previewCluster.memberCount === 1 ? 'person' : 'people'} here
+          </Text>
+          <Button
+            label="✓ Join"
+            onPress={() => {
+              onClusterPress?.(previewCluster.incidentId);
+              dismissPreview();
+            }}
+          />
+          <Button label="Close" onPress={dismissPreview} variant="secondary" />
+        </View>
+      )}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#16213e',
-    padding: 24,
-    gap: 16,
+  container: {
+    ...StyleSheet.absoluteFillObject,
   },
-  title: {
-    color: '#fff',
-    fontSize: 28,
-    fontWeight: '700',
+  map: {
+    ...StyleSheet.absoluteFillObject,
   },
-  subtitle: {
-    color: '#cbd5e1',
-    fontSize: 16,
-    lineHeight: 22,
-  },
-  body: {
-    color: '#e2e8f0',
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  card: {
+  recenter: {
+    position: 'absolute',
+    top: 56,
+    right: 16,
     backgroundColor: '#1a1a2e',
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: '#334155',
+  },
+  recenterText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  previewCard: {
+    position: 'absolute',
+    width: 230,
+    backgroundColor: '#1a1a2e',
+    borderRadius: 16,
+    padding: 14,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  previewDesc: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  previewMeta: {
+    color: '#94a3b8',
+    fontSize: 12,
   },
 });
 </file>
 
-<file path="lib/auth.ts">
-// lib/auth.ts
-import {
-  signInAnonymously,
-  onAuthStateChanged,
-} from 'firebase/auth';
-import {
-  ref,
-  set,
-  get,
-} from 'firebase/database';
-import { auth, db } from './firebase';
-import type { Profile } from './types';
+<file path="lib/map.ts">
+import type { LatLng, Region } from 'react-native-maps';
 
-export async function ensureAnonymousSession(): Promise<string> {
-  if (auth.currentUser) {
-    return auth.currentUser.uid;
-  }
-  const credential = await signInAnonymously(auth);
-  return credential.user.uid;
-}
+import type { IncidentMember, MemberRole } from './types';
 
-export async function getCurrentUserId(): Promise<string | null> {
-  return auth.currentUser?.uid ?? null;
-}
-
-export async function getProfile(userId: string): Promise<Profile | null> {
-  const snap = await get(ref(db, `profiles/${userId}`));
-  if (!snap.exists()) {
-    return null;
-  }
-  const data = snap.val();
-  return {
-    id: userId,
-    display_name: data.display_name,
-    shirt_color: data.shirt_color ?? null,
-  };
-}
-
-export async function saveProfile(
-  userId: string,
-  displayName: string,
-  shirtColor: string | null,
-): Promise<Profile> {
-  const profile = {
-    display_name: displayName.trim(),
-    shirt_color: shirtColor,
-  };
-  await set(ref(db, `profiles/${userId}`), profile);
-  return { id: userId, ...profile };
-}
-</file>
-
-<file path="lib/firebase.ts">
-// lib/firebase.ts
-import { initializeApp, getApps } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getDatabase } from 'firebase/database';
-
-const firebaseConfig = {
-  apiKey: "AIzaSyCVhBH5EYWauC6_8sIAxdUkQvjVRAlULy4",
-  authDomain: "flint-app-596cd.firebaseapp.com",
-  databaseURL: "https://flint-app-596cd-default-rtdb.firebaseio.com",
-  projectId: "flint-app-596cd",
-  storageBucket: "flint-app-596cd.firebasestorage.app",
-  messagingSenderId: "603163397524",
-  appId: "1:603163397524:web:226188fb2ed19b82dd5381",
-  measurementId: "G-NTEN1KKT25"
+export type MapCoordinate = {
+  latitude: number;
+  longitude: number;
 };
 
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-
-export const auth = getAuth(app);
-export const db = getDatabase(app);
-export const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.databaseURL);
-</file>
-
-<file path="lib/incidents.ts">
-// lib/incidents.ts
-import {
-  ref,
-  get,
-  set,
-  update,
-  push,
-  onValue,
-} from 'firebase/database';
-import { auth, db } from './firebase';
-import { encodeGeohash } from './location';
-import type { IncidentContext, NearbyCluster } from './map';
-import type {
-  Incident,
-  IncidentMember,
-  MatchIncidentResponse,
-  MemberRole,
-} from './types';
-
-export type { NearbyCluster } from './map';
-
-const PROXIMITY_METERS = 50;
-const MOVEMENT_SPEED_THRESHOLD = 2;
-
-function haversineMeters(
-  lat1: number, lng1: number,
-  lat2: number, lng2: number,
-): number {
-  const toRad = (v: number) => (v * Math.PI) / 180;
-  const R = 6371000;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
-}
-
-function headingDiff(a: number | null, b: number | null): number {
-  if (a == null || b == null) return 0;
-  const diff = Math.abs(a - b) % 360;
-  return diff > 180 ? 360 - diff : diff;
-}
-
-function movementMatches(
-  lat: number, lng: number,
-  heading: number | null, speed: number | null,
-  refLat: number | null, refLng: number | null,
-  refHeading: number | null, refSpeed: number | null,
-): boolean {
-  if (refLat == null || refLng == null) return true;
-  if (haversineMeters(lat, lng, refLat, refLng) > PROXIMITY_METERS) return false;
-
-  const moving = (speed ?? 0) > MOVEMENT_SPEED_THRESHOLD || (refSpeed ?? 0) > MOVEMENT_SPEED_THRESHOLD;
-  if (!moving) {
-    return true;
-  }
-
-  if (heading != null && refHeading != null && headingDiff(heading, refHeading) > 20) return false;
-  if (speed != null && refSpeed != null && Math.abs(speed - refSpeed) > 3) return false;
-  return true;
-}
-
-function transitMatches(
-  context: IncidentContext | undefined,
-  incident: Record<string, unknown>,
-): boolean {
-  const reporterLine = context?.transitLine?.trim();
-  const reporterDirection = context?.direction?.trim();
-  const reporterCar = context?.carNumber?.trim();
-
-  const incidentLine = typeof incident.transit_line === 'string' ? incident.transit_line.trim() : '';
-  const incidentDirection = typeof incident.direction === 'string' ? incident.direction.trim() : '';
-  const incidentCar = typeof incident.car_number === 'string' ? incident.car_number.trim() : '';
-
-  if (reporterLine && incidentLine && reporterLine !== incidentLine) return false;
-  if (reporterDirection && incidentDirection && reporterDirection !== incidentDirection) return false;
-  if (reporterCar && incidentCar && reporterCar !== incidentCar) return false;
-
-  return true;
-}
-
-function isJoinableIncident(incident: Record<string, unknown>, now: number): boolean {
-  return (
-    ['open', 'ready'].includes(String(incident.status)) &&
-    Number(incident.expires_at) > now &&
-    incident.last_lat != null &&
-    incident.last_lng != null
-  );
-}
-
-async function checkRateLimit(userId: string): Promise<void> {
-  const oneHourAgo = Date.now() - 60 * 60 * 1000;
-  const snap = await get(ref(db, `rate_limits/${userId}`));
-  if (snap.exists()) {
-    const timestamps: number[] = Object.values(snap.val());
-    const recent = timestamps.filter((t) => t > oneHourAgo);
-    if (recent.length >= 3) {
-      throw new Error('Rate limit exceeded — max 3 reports per hour.');
-    }
-  }
-}
-
-async function recordRateLimit(userId: string): Promise<void> {
-  await push(ref(db, `rate_limits/${userId}`), Date.now());
-}
-
-async function findMatchingIncident(
-  lat: number,
-  lng: number,
-  heading: number | null,
-  speed: number | null,
-  context?: IncidentContext,
-): Promise<string | null> {
-  const now = Date.now();
-  const incidentsSnap = await get(ref(db, 'incidents'));
-  if (!incidentsSnap.exists()) {
-    return null;
-  }
-
-  const incidents = incidentsSnap.val() as Record<string, Record<string, unknown>>;
-  for (const [id, incident] of Object.entries(incidents)) {
-    if (!isJoinableIncident(incident, now)) continue;
-    if (!transitMatches(context, incident)) continue;
-
-    const matches = movementMatches(
-      lat,
-      lng,
-      heading,
-      speed,
-      Number(incident.last_lat),
-      Number(incident.last_lng),
-      (incident.last_heading as number | null) ?? null,
-      (incident.last_speed as number | null) ?? null,
-    );
-
-    if (matches) {
-      return id;
-    }
-  }
-
-  return null;
-}
-
-export async function reportNuisance(
-  lat: number,
-  lng: number,
-  heading: number | null,
-  speed: number | null,
-  context?: IncidentContext,
-): Promise<MatchIncidentResponse> {
-  const userId = auth.currentUser?.uid;
-  if (!userId) throw new Error('Not signed in');
-
-  await checkRateLimit(userId);
-
-  const now = Date.now();
-  const expiresAt = now + 10 * 60 * 1000;
-  const geohash = encodeGeohash(lat, lng, 7);
-
-  const matchedId = await findMatchingIncident(lat, lng, heading, speed, context);
-  let incidentId: string;
-
-  if (matchedId) {
-    incidentId = matchedId;
-  } else {
-    const newRef = push(ref(db, 'incidents'));
-    incidentId = newRef.key!;
-    await set(newRef, {
-      transit_line: context?.transitLine?.trim() || null,
-      direction: context?.direction?.trim() || null,
-      geohash,
-      car_number: context?.carNumber?.trim() || null,
-      status: 'open',
-      expires_at: expiresAt,
-      last_lat: lat,
-      last_lng: lng,
-      last_heading: heading,
-      last_speed: speed,
-      created_at: now,
-    });
-  }
-
-  await recordRateLimit(userId);
-  await _upsertMember(incidentId, userId, lat, lng, heading, speed);
-  await _refreshExpiry(incidentId, lat, lng, heading, speed, expiresAt);
-  await _checkReady(incidentId);
-
-  return _buildResponse(incidentId, userId);
-}
-
-export async function joinIncident(
-  incidentId: string,
-  lat: number,
-  lng: number,
-  heading: number | null,
-  speed: number | null,
-  context?: IncidentContext,
-): Promise<MatchIncidentResponse> {
-  const userId = auth.currentUser?.uid;
-  if (!userId) throw new Error('Not signed in');
-
-  const incidentSnap = await get(ref(db, `incidents/${incidentId}`));
-  if (!incidentSnap.exists()) {
-    throw new Error('Report not found');
-  }
-
-  const incident = incidentSnap.val() as Record<string, unknown>;
-  const now = Date.now();
-  if (!isJoinableIncident(incident, now)) {
-    throw new Error('This report is no longer active');
-  }
-
-  if (!transitMatches(context, incident)) {
-    throw new Error('Transit details do not match this report');
-  }
-
-  const matches = movementMatches(
-    lat,
-    lng,
-    heading,
-    speed,
-    Number(incident.last_lat),
-    Number(incident.last_lng),
-    (incident.last_heading as number | null) ?? null,
-    (incident.last_speed as number | null) ?? null,
-  );
-
-  if (!matches) {
-    throw new Error('You are too far from this report to join');
-  }
-
-  const expiresAt = now + 10 * 60 * 1000;
-  await _upsertMember(incidentId, userId, lat, lng, heading, speed);
-  await _refreshExpiry(incidentId, lat, lng, heading, speed, expiresAt);
-  await _checkReady(incidentId);
-
-  return _buildResponse(incidentId, userId);
-}
-
-export async function pingIncident(
-  incidentId: string,
-  lat: number,
-  lng: number,
-  heading: number | null,
-  speed: number | null,
-): Promise<MatchIncidentResponse> {
-  const userId = auth.currentUser?.uid;
-  if (!userId) throw new Error('Not signed in');
-
-  const expiresAt = Date.now() + 10 * 60 * 1000;
-  await _upsertMember(incidentId, userId, lat, lng, heading, speed);
-  await _refreshExpiry(incidentId, lat, lng, heading, speed, expiresAt);
-
-  return _buildResponse(incidentId, userId);
-}
-
-async function _upsertMember(
-  incidentId: string,
-  userId: string,
-  lat: number,
-  lng: number,
-  heading: number | null,
-  speed: number | null,
-): Promise<void> {
-  const memberRef = ref(db, `incident_members/${incidentId}/${userId}`);
-  const snap = await get(memberRef);
-  if (snap.exists()) {
-    await update(memberRef, { last_lat: lat, last_lng: lng, heading, speed });
-  } else {
-    await set(memberRef, {
-      user_id: userId,
-      role: 'bothered',
-      last_lat: lat,
-      last_lng: lng,
-      heading,
-      speed,
-      joined_at: Date.now(),
-    });
-  }
-}
-
-async function _refreshExpiry(
-  incidentId: string,
-  lat: number,
-  lng: number,
-  heading: number | null,
-  speed: number | null,
-  expiresAt: number,
-): Promise<void> {
-  await update(ref(db, `incidents/${incidentId}`), {
-    last_lat: lat,
-    last_lng: lng,
-    last_heading: heading,
-    last_speed: speed,
-    expires_at: expiresAt,
-  });
-}
-
-async function _checkReady(incidentId: string): Promise<void> {
-  const snap = await get(ref(db, `incident_members/${incidentId}`));
-  if (!snap.exists()) return;
-
-  const members: Record<string, { role: MemberRole }> = snap.val();
-  const roles = Object.values(members).map((m) => m.role);
-  const hasConfronter = roles.includes('confronter');
-  const partnerCount = roles.filter((r) => r === 'partner').length;
-
-  if (hasConfronter && partnerCount >= 1) {
-    await update(ref(db, `incidents/${incidentId}`), { status: 'ready' });
-  }
-}
-
-async function _buildResponse(
-  incidentId: string,
-  userId: string,
-): Promise<MatchIncidentResponse> {
-  const [incidentSnap, membersSnap] = await Promise.all([
-    get(ref(db, `incidents/${incidentId}`)),
-    get(ref(db, `incident_members/${incidentId}`)),
-  ]);
-
-  const incident = incidentSnap.val();
-  const members = membersSnap.exists() ? Object.values(membersSnap.val()) : [];
-  const memberCount = members.length;
-  const othersCount = Math.max(memberCount - 1, 0);
-
-  return {
-    incident_id: incidentId,
-    member_count: memberCount,
-    others_count: othersCount,
-    status: incident?.status ?? 'open',
-  };
-}
-
-async function _memberCount(incidentId: string): Promise<number> {
-  const snap = await get(ref(db, `incident_members/${incidentId}`));
-  if (!snap.exists()) return 0;
-  return Object.keys(snap.val()).length;
-}
-
-export async function listNearbyIncidents(
-  lat: number,
-  lng: number,
-  radiusMeters = 200,
-): Promise<NearbyCluster[]> {
-  const now = Date.now();
-  const incidentsSnap = await get(ref(db, 'incidents'));
-  if (!incidentsSnap.exists()) {
-    return [];
-  }
-
-  const incidents = incidentsSnap.val() as Record<string, Record<string, unknown>>;
-  const clusters: NearbyCluster[] = [];
-
-  for (const [incidentId, incident] of Object.entries(incidents)) {
-    if (!isJoinableIncident(incident, now)) continue;
-
-    const incidentLat = Number(incident.last_lat);
-    const incidentLng = Number(incident.last_lng);
-    const distance = haversineMeters(lat, lng, incidentLat, incidentLng);
-    if (distance > radiusMeters) continue;
-
-    const memberCount = await _memberCount(incidentId);
-    if (memberCount === 0) continue;
-
-    clusters.push({
-      incidentId,
-      lat: incidentLat,
-      lng: incidentLng,
-      memberCount,
-    });
-  }
-
-  return clusters.sort((a, b) => b.memberCount - a.memberCount);
-}
-
-export function subscribeToNearbyIncidents(
-  lat: number,
-  lng: number,
-  radiusMeters: number,
-  onChange: (clusters: NearbyCluster[]) => void,
-): () => void {
-  const incidentsRef = ref(db, 'incidents');
-  const membersRef = ref(db, 'incident_members');
-
-  let active = true;
-
-  const refresh = async () => {
-    if (!active) return;
-    const clusters = await listNearbyIncidents(lat, lng, radiusMeters);
-    onChange(clusters);
-  };
-
-  void refresh();
-  const unsubIncidents = onValue(incidentsRef, () => {
-    void refresh();
-  });
-  const unsubMembers = onValue(membersRef, () => {
-    void refresh();
-  });
-
-  return () => {
-    active = false;
-    unsubIncidents();
-    unsubMembers();
-  };
-}
-
-export async function setMemberRole(
-  incidentId: string,
-  role: MemberRole,
-): Promise<void> {
-  const userId = auth.currentUser?.uid;
-  if (!userId) throw new Error('Not signed in');
-
-  if (role === 'confronter') {
-    const snap = await get(ref(db, `incident_members/${incidentId}`));
-    if (snap.exists()) {
-      const members: Record<string, { role: MemberRole }> = snap.val();
-      const hasOtherConfronter = Object.entries(members).some(
-        ([id, m]) => m.role === 'confronter' && id !== userId,
-      );
-      if (hasOtherConfronter) {
-        throw new Error('Someone is already the confronter');
-      }
-    }
-  }
-
-  await update(ref(db, `incident_members/${incidentId}/${userId}`), { role });
-  await _checkReady(incidentId);
-}
-
-export async function triggerGo(incidentId: string): Promise<void> {
-  await update(ref(db, `incidents/${incidentId}`), {
-    status: 'go',
-    go_at: Date.now(),
-  });
-}
-
-export async function closeIncident(incidentId: string): Promise<void> {
-  await update(ref(db, `incidents/${incidentId}`), { status: 'closed' });
-}
-
-export async function getIncident(incidentId: string): Promise<Incident | null> {
-  const snap = await get(ref(db, `incidents/${incidentId}`));
-  if (!snap.exists()) return null;
-  const d = snap.val();
-  return {
-    id: incidentId,
-    transit_line: d.transit_line ?? null,
-    direction: d.direction ?? null,
-    geohash: d.geohash,
-    car_number: d.car_number ?? null,
-    status: d.status,
-    expires_at: new Date(d.expires_at).toISOString(),
-    last_lat: d.last_lat ?? null,
-    last_lng: d.last_lng ?? null,
-    go_at: d.go_at ? new Date(d.go_at).toISOString() : null,
-    created_at: new Date(d.created_at).toISOString(),
-  };
-}
-
-export async function getIncidentMembers(
-  incidentId: string,
-): Promise<IncidentMember[]> {
-  const [membersSnap, profilesSnap] = await Promise.all([
-    get(ref(db, `incident_members/${incidentId}`)),
-    get(ref(db, 'profiles')),
-  ]);
-
-  if (!membersSnap.exists()) return [];
-
-  const profiles: Record<string, { display_name: string; shirt_color?: string | null }> =
-    profilesSnap.exists() ? profilesSnap.val() : {};
-
-  return Object.entries(membersSnap.val() as Record<string, Record<string, unknown>>)
-    .map(([memberUserId, m]) => ({
-      id: `${incidentId}_${memberUserId}`,
-      incident_id: incidentId,
-      user_id: memberUserId,
-      role: m.role as MemberRole,
-      last_lat: (m.last_lat as number | null) ?? null,
-      last_lng: (m.last_lng as number | null) ?? null,
-      heading: (m.heading as number | null) ?? null,
-      speed: (m.speed as number | null) ?? null,
-      joined_at: new Date(m.joined_at as number).toISOString(),
-      profile: profiles[memberUserId]
-        ? {
-            id: memberUserId,
-            display_name: profiles[memberUserId].display_name,
-            shirt_color: profiles[memberUserId].shirt_color ?? null,
-          }
-        : undefined,
-    }))
-    .sort((a, b) => a.joined_at.localeCompare(b.joined_at));
-}
-
-export function subscribeToIncident(
-  incidentId: string,
-  onChange: () => void,
-): () => void {
-  const incidentRef = ref(db, `incidents/${incidentId}`);
-  const membersRef = ref(db, `incident_members/${incidentId}`);
-
-  const unsubIncident = onValue(incidentRef, onChange);
-  const unsubMembers = onValue(membersRef, onChange);
-
-  return () => {
-    unsubIncident();
-    unsubMembers();
-  };
-}
-
-export function countOthers(members: IncidentMember[], userId: string): number {
-  return members.filter((m) => m.user_id !== userId).length;
-}
-
-export function getConfronter(members: IncidentMember[]): IncidentMember | undefined {
-  return members.find((m) => m.role === 'confronter');
-}
-
-export function countPartners(members: IncidentMember[]): number {
-  return members.filter((m) => m.role === 'partner').length;
-}
-
-export function isReadyGroup(members: IncidentMember[]): boolean {
-  return Boolean(getConfronter(members)) && countPartners(members) >= 1;
-}
-</file>
-
-<file path="lib/location.ts">
-import * as Location from 'expo-location';
-
-export type LocationPing = {
+export type NearbyCluster = {
+  incidentId: string;
   lat: number;
   lng: number;
-  heading: number | null;
-  speed: number | null;
+  memberCount: number;
+  description?: string | null;
 };
 
-export async function requestLocationPermission(): Promise<boolean> {
-  const { status } = await Location.requestForegroundPermissionsAsync();
-  return status === Location.PermissionStatus.GRANTED;
+export function markerColorForRole(role: MemberRole | 'self'): string {
+  switch (role) {
+    case 'self':
+      return '#3b82f6';
+    case 'confronter':
+      return '#e94560';
+    case 'partner':
+      return '#64748b';
+    default:
+      return '#f59e0b';
+  }
 }
 
-export async function getCurrentLocationPing(): Promise<LocationPing> {
-  const position = await Location.getCurrentPositionAsync({
-    accuracy: Location.Accuracy.High,
-  });
-
-  return {
-    lat: position.coords.latitude,
-    lng: position.coords.longitude,
-    heading: position.coords.heading ?? null,
-    speed: position.coords.speed ?? null,
-  };
+export function toCoordinate(lat: number | null, lng: number | null): MapCoordinate | null {
+  if (lat == null || lng == null) {
+    return null;
+  }
+  return { latitude: lat, longitude: lng };
 }
 
-export function startLocationPingLoop(
-  onPing: (ping: LocationPing) => void,
-  intervalMs = 5000,
-): () => void {
-  let active = true;
-
-  const tick = async () => {
-    if (!active) {
-      return;
-    }
-
-    try {
-      const ping = await getCurrentLocationPing();
-      onPing(ping);
-    } catch {
-      // Location unavailable; skip this tick.
-    }
-  };
-
-  void tick();
-  const interval = setInterval(() => {
-    void tick();
-  }, intervalMs);
-
-  return () => {
-    active = false;
-    clearInterval(interval);
-  };
-}
-
-const BASE32 = '0123456789bcdefghjkmnpqrstuvwxyz';
-
-export function encodeGeohash(lat: number, lng: number, precision = 7): string {
-  let minLat = -90;
-  let maxLat = 90;
-  let minLng = -180;
-  let maxLng = 180;
-  let hash = '';
-  let bit = 0;
-  let ch = 0;
-  let isLng = true;
-
-  while (hash.length < precision) {
-    if (isLng) {
-      const mid = (minLng + maxLng) / 2;
-      if (lng >= mid) {
-        ch = (ch << 1) + 1;
-        minLng = mid;
-      } else {
-        ch = (ch << 1) + 0;
-        maxLng = mid;
+export function membersWithCoordinates(
+  members: IncidentMember[],
+  userId: string | null,
+): Array<{ member: IncidentMember; coordinate: MapCoordinate; isSelf: boolean }> {
+  return members
+    .map((member) => {
+      const coordinate = toCoordinate(member.last_lat, member.last_lng);
+      if (!coordinate) {
+        return null;
       }
-    } else {
-      const mid = (minLat + maxLat) / 2;
-      if (lat >= mid) {
-        ch = (ch << 1) + 1;
-        minLat = mid;
-      } else {
-        ch = (ch << 1) + 0;
-        maxLat = mid;
-      }
-    }
+      return {
+        member,
+        coordinate,
+        isSelf: member.user_id === userId,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item != null);
+}
 
-    isLng = !isLng;
-    bit += 1;
+export function clusterCoordinates(clusters: NearbyCluster[]): MapCoordinate[] {
+  return clusters.map((cluster) => ({
+    latitude: cluster.lat,
+    longitude: cluster.lng,
+  }));
+}
 
-    if (bit === 5) {
-      hash += BASE32[ch];
-      bit = 0;
-      ch = 0;
-    }
+export function fitMapRegion(
+  coordinates: MapCoordinate[],
+  userCoordinate?: MapCoordinate | null,
+): Region | null {
+  const all = [...coordinates];
+  if (userCoordinate) {
+    all.push(userCoordinate);
+  }
+  if (all.length === 0) {
+    return null;
   }
 
-  return hash;
+  if (all.length === 1) {
+    return {
+      ...all[0],
+      latitudeDelta: 0.01,
+      longitudeDelta: 0.01,
+    };
+  }
+
+  const lats = all.map((c) => c.latitude);
+  const lngs = all.map((c) => c.longitude);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  const latDelta = Math.max((maxLat - minLat) * 1.6, 0.008);
+  const lngDelta = Math.max((maxLng - minLng) * 1.6, 0.008);
+
+  return {
+    latitude: (minLat + maxLat) / 2,
+    longitude: (minLng + maxLng) / 2,
+    latitudeDelta: latDelta,
+    longitudeDelta: lngDelta,
+  };
+}
+
+export function latLngToMapCoordinate(lat: number, lng: number): LatLng {
+  return { latitude: lat, longitude: lng };
 }
 </file>
 
-<file path="lib/types.ts">
-export type IncidentStatus = 'open' | 'ready' | 'go' | 'closed';
-export type MemberRole = 'bothered' | 'confronter' | 'partner';
+<file path=".gitignore">
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
-export type Profile = {
-  id: string;
-  display_name: string;
-  shirt_color: string | null;
-};
+# dependencies
+node_modules/
 
-export type Incident = {
-  id: string;
-  transit_line: string | null;
-  direction: string | null;
-  geohash: string;
-  car_number: string | null;
-  status: IncidentStatus;
-  expires_at: string;
-  last_lat: number | null;
-  last_lng: number | null;
-  go_at: string | null;
-  created_at: string;
-};
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
 
-export type IncidentMember = {
-  id: string;
-  incident_id: string;
-  user_id: string;
-  role: MemberRole;
-  last_lat: number | null;
-  last_lng: number | null;
-  heading: number | null;
-  speed: number | null;
-  joined_at: string;
-  profile?: Profile;
-};
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
 
-export type MatchIncidentResponse = {
-  incident_id: string;
-  member_count: number;
-  others_count: number;
-  status: IncidentStatus;
-};
+# Metro
+.metro-health-check*
 
-export const SHIRT_COLORS = ['black', 'white', 'red', 'blue', 'green', 'other'] as const;
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
 
-export const DIRECTIONS = ['Northbound', 'Southbound', 'Eastbound', 'Westbound', 'Uptown', 'Downtown'] as const;
+# macOS
+.DS_Store
+*.pem
 
-export const CONFRONTER_SCRIPT =
-  'Excuse me — would you mind using headphones? It\'s disturbing people nearby.';
+# local env files
+.env
+.env*.local
 
-export const PARTNER_SCRIPT = 'Yeah, we\'d really appreciate that.';
-</file>
+# typescript
+*.tsbuildinfo
 
-<file path=".env.example">
-# Firebase config is set directly in lib/firebase.ts
-# No .env needed for Firebase in Expo
+# generated native folders
+/ios
+/android
 </file>
 
 <file path="AGENTS.md">
 # Expo HAS CHANGED
 
 Read the exact versioned docs at https://docs.expo.dev/versions/v54.0.0/ before writing any code.
-</file>
-
-<file path="CLAUDE.md">
-@AGENTS.md
-</file>
-
-<file path="LICENSE">
-The MIT License (MIT)
-
-Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
 </file>
 
 <file path="README.md">
@@ -2436,49 +1290,387 @@ export default function RootLayout() {
 }
 </file>
 
-<file path=".gitignore">
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+<file path="components/ClusterMarker.tsx">
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Marker } from 'react-native-maps';
 
-# dependencies
-node_modules/
+import type { NearbyCluster } from '@/lib/map';
 
-# Expo
-.expo/
-dist/
-web-build/
-expo-env.d.ts
+type Props = {
+  cluster: NearbyCluster;
+  onPress?: (incidentId: string) => void;
+};
 
-# Native
-.kotlin/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
+export function ClusterMarker({ cluster, onPress }: Props) {
+  return (
+    <Marker
+      coordinate={{ latitude: cluster.lat, longitude: cluster.lng }}
+      anchor={{ x: 0.5, y: 0.5 }}
+      tracksViewChanges={false}
+      onPress={() => onPress?.(cluster.incidentId)}>
+      <Pressable style={styles.wrapper} onPress={() => onPress?.(cluster.incidentId)}>
+        <View style={styles.dot} />
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{cluster.memberCount}</Text>
+        </View>
+      </Pressable>
+    </Marker>
+  );
+}
 
-# Metro
-.metro-health-check*
+const styles = StyleSheet.create({
+  wrapper: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#94a3b8',
+    borderWidth: 2,
+    borderColor: '#fff',
+    opacity: 0.85,
+  },
+  badge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#1a1a2e',
+    borderWidth: 1,
+    borderColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+});
+</file>
 
-# debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
+<file path="components/MapBottomSheet.tsx">
+import { useEffect, useRef } from 'react';
+import { Animated, Keyboard, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-# macOS
-.DS_Store
-*.pem
+import { Button, Input } from '@/components/controls';
+import { Body, Subtitle, Title } from '@/components/ui';
+import {
+  CONFRONTER_SCRIPT,
+  PARTNER_SCRIPT,
+  type IncidentMember,
+  type IncidentStatus,
+} from '@/lib/types';
 
-# local env files
-.env
-.env*.local
+export type SheetState = 'idle' | 'waiting' | 'roles' | 'ready' | 'go';
 
-# typescript
-*.tsbuildinfo
+type Props = {
+  state: SheetState;
+  othersCount: number;
+  status: IncidentStatus;
+  reporting: boolean;
+  acting: boolean;
+  description: string;
+  members: IncidentMember[];
+  userId: string | null;
+  isConfronter: boolean;
+  isPartner: boolean;
+  onDescriptionChange: (value: string) => void;
+  onReport: () => void;
+  onRole: (role: 'confronter' | 'partner') => void;
+  onGo: () => void;
+  onDone: () => void;
+  onComplete: () => void;
+};
 
-# generated native folders
-/ios
-/android
+const SHIRT_HEX: Record<string, string> = {
+  black: '#111827',
+  white: '#f8fafc',
+  red: '#ef4444',
+  blue: '#3b82f6',
+  green: '#22c55e',
+};
+
+function shirtHex(color?: string | null): string {
+  return (color && SHIRT_HEX[color]) || '#64748b';
+}
+
+function roleLabel(role: string): string {
+  if (role === 'confronter') return 'speaking first';
+  if (role === 'partner') return 'backing up';
+  return 'no role yet';
+}
+
+export function MapBottomSheet({
+  state,
+  othersCount,
+  status,
+  reporting,
+  acting,
+  description,
+  members,
+  userId,
+  isConfronter,
+  isPartner,
+  onDescriptionChange,
+  onReport,
+  onRole,
+  onGo,
+  onDone,
+  onComplete,
+}: Props) {
+  const insets = useSafeAreaInsets();
+
+  const keyboardOffset = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      Animated.timing(keyboardOffset, {
+        toValue: -(e.endCoordinates?.height ?? 0),
+        duration: e.duration || 250,
+        useNativeDriver: true,
+      }).start();
+    });
+    const hideSub = Keyboard.addListener(hideEvent, (e) => {
+      Animated.timing(keyboardOffset, {
+        toValue: 0,
+        duration: e.duration || 250,
+        useNativeDriver: true,
+      }).start();
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [keyboardOffset]);
+
+  const roster = members.length > 0 && (
+    <View style={styles.roster}>
+      {members.map((member) => (
+        <View key={member.user_id} style={styles.rosterRow}>
+          <View style={[styles.swatch, { backgroundColor: shirtHex(member.profile?.shirt_color) }]} />
+          <Text style={styles.rosterName}>
+            {member.profile?.display_name || 'Someone'}
+            {member.user_id === userId ? ' (you)' : ''}
+          </Text>
+          <Text style={styles.rosterRole}>{roleLabel(member.role)}</Text>
+        </View>
+      ))}
+    </View>
+  );
+
+  return (
+    <Animated.View
+      style={[
+        styles.sheet,
+        { paddingBottom: Math.max(insets.bottom, 16), transform: [{ translateY: keyboardOffset }] },
+      ]}>
+      {state === 'idle' && (
+        <>
+          <Title>Someone being loud?</Title>
+          <Subtitle>
+            Tap report to check in. Nearby dots show others bothered by loud audio in your area.
+          </Subtitle>
+          <Input
+            label="Quick description (optional)"
+            onChangeText={onDescriptionChange}
+            placeholder="Green shirt, phone audio, inside Chipotle"
+            value={description}
+            maxLength={40}
+          />
+          <Button
+            disabled={reporting}
+            label={reporting ? 'Checking in...' : 'Report nuisance'}
+            onPress={onReport}
+          />
+        </>
+      )}
+
+      {state === 'waiting' && (
+        <>
+          <Text style={styles.count}>{othersCount}</Text>
+          <Body>
+            {othersCount === 0
+              ? 'No one else nearby yet. Stay on the map — others may join.'
+              : othersCount === 1
+                ? 'One other person nearby also bothered.'
+                : `${othersCount} others nearby also bothered.`}
+          </Body>
+          <Body>Status: {status}</Body>
+          {roster}
+          <Button disabled={acting} label="Leave" onPress={onDone} variant="secondary" />
+        </>
+      )}
+
+      {state === 'roles' && (
+        <>
+          <Title>Choose a role</Title>
+          <Body>When you are ready to speak up together.</Body>
+          <Button label="I'll speak first" onPress={() => onRole('confronter')} />
+          <Button label="I'll back them up" onPress={() => onRole('partner')} variant="secondary" />
+          {roster}
+          <Button disabled={acting} label="Leave" onPress={onDone} variant="secondary" />
+        </>
+      )}
+
+      {(state === 'ready' || state === 'go') && (
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+          <Title>{state === 'go' ? 'Speak up now' : 'Ready together'}</Title>
+          <Subtitle>
+            {state === 'go'
+              ? isPartner
+                ? 'Back them up now with the line below.'
+                : isConfronter
+                  ? 'Say your line calmly and clearly.'
+                  : 'The group is speaking up now.'
+              : 'Review the script. The confronter starts when everyone is ready.'}
+          </Subtitle>
+          {roster}
+          <Body>Confronter says:</Body>
+          <Subtitle>{CONFRONTER_SCRIPT}</Subtitle>
+          <Body>Partners say:</Body>
+          <Subtitle>{PARTNER_SCRIPT}</Subtitle>
+          {state === 'go' && isPartner && (
+            <>
+              <Title>Back them up now</Title>
+              <Subtitle>{PARTNER_SCRIPT}</Subtitle>
+            </>
+          )}
+          {state === 'ready' && isConfronter && (
+            <Button disabled={acting} label={acting ? 'Starting...' : 'Go'} onPress={onGo} />
+          )}
+          {state === 'go' ? (
+            <Button disabled={acting} label="Completed" onPress={onComplete} />
+          ) : (
+            <Button
+              disabled={acting}
+              label="Leave"
+              onPress={onDone}
+              variant={isConfronter ? 'secondary' : 'primary'}
+            />
+          )}
+        </ScrollView>
+      )}
+    </Animated.View>
+  );
+}
+
+const styles = StyleSheet.create({
+  sheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#1a1a2e',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    gap: 12,
+    borderTopWidth: 1,
+    borderColor: '#334155',
+    maxHeight: '45%',
+  },
+  count: {
+    color: '#fff',
+    fontSize: 32,
+    fontWeight: '700',
+  },
+  roster: {
+    gap: 10,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  rosterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  swatch: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: '#475569',
+  },
+  rosterName: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+  },
+  rosterRole: {
+    color: '#94a3b8',
+    fontSize: 13,
+  },
+  scroll: {
+    maxHeight: 280,
+  },
+  scrollContent: {
+    gap: 12,
+    paddingBottom: 8,
+  },
+});
+</file>
+
+<file path="lib/types.ts">
+export type IncidentStatus = 'open' | 'ready' | 'go' | 'closed';
+export type MemberRole = 'bothered' | 'confronter' | 'partner';
+
+export type Profile = {
+  id: string;
+  display_name: string;
+  shirt_color: string | null;
+};
+
+export type Incident = {
+  id: string;
+  description: string | null;
+  creator_uid: string | null;
+  geohash: string;
+  status: IncidentStatus;
+  expires_at: string;
+  last_lat: number | null;
+  last_lng: number | null;
+  go_at: string | null;
+  created_at: string;
+};
+
+export type IncidentMember = {
+  id: string;
+  incident_id: string;
+  user_id: string;
+  role: MemberRole;
+  last_lat: number | null;
+  last_lng: number | null;
+  heading: number | null;
+  speed: number | null;
+  joined_at: string;
+  profile?: Profile;
+};
+
+export type MatchIncidentResponse = {
+  incident_id: string;
+  member_count: number;
+  others_count: number;
+  status: IncidentStatus;
+};
+
+export const SHIRT_COLORS = ['black', 'white', 'red', 'blue', 'green', 'other'] as const;
+
+export const CONFRONTER_SCRIPT =
+  'Excuse me — would you mind using headphones? It\'s disturbing people nearby.';
+
+export const PARTNER_SCRIPT = 'Yeah, we\'d really appreciate that.';
 </file>
 
 <file path="app.json">
@@ -2586,6 +1778,1125 @@ yarn-error.*
     }
   },
   "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
+}
+</file>
+
+<file path="app/index.tsx">
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Platform, StyleSheet, View } from 'react-native';
+
+import { FlintMap } from '@/components/FlintMap';
+import { Button, LoadingState } from '@/components/controls';
+import { MapBottomSheet, type SheetState } from '@/components/MapBottomSheet';
+import { Body, Card, Screen, Subtitle, Title } from '@/components/ui';
+import { ensureAnonymousSession, getCurrentUserId, getProfile } from '@/lib/auth';
+import { isFirebaseConfigured } from '@/lib/firebase';
+import type { NearbyCluster } from '@/lib/map';
+import {
+  leaveIncident,
+  completeIncident,
+  countOthers,
+  getConfronter,
+  getIncident,
+  getIncidentMembers,
+  isReadyGroup,
+  joinIncident,
+  pingIncident,
+  reportNuisance,
+  setMemberRole,
+  subscribeToIncident,
+  subscribeToNearbyIncidents,
+  triggerGo,
+} from '@/lib/incidents';
+import {
+  getCurrentLocationPing,
+  requestLocationPermission,
+  startLocationPingLoop,
+  type LocationPing,
+} from '@/lib/location';
+import type { IncidentMember, IncidentStatus } from '@/lib/types';
+
+function deriveSheetState(
+  incidentId: string | null,
+  status: IncidentStatus,
+  members: IncidentMember[],
+  userId: string | null,
+): SheetState {
+  if (!incidentId) return 'idle';
+  if (status === 'go') return 'go';
+  if (status === 'ready') return 'ready';
+
+  const othersCount = userId ? countOthers(members, userId) : 0;
+  const ready = isReadyGroup(members);
+  if (othersCount >= 1 && !ready) return 'roles';
+  return 'waiting';
+}
+
+export default function HomeScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{ incidentId?: string }>();
+  const paramIncidentId = typeof params.incidentId === 'string' ? params.incidentId : null;
+
+  const [loading, setLoading] = useState(true);
+  const [reporting, setReporting] = useState(false);
+  const [acting, setActing] = useState(false);
+  const [description, setDescription] = useState('');
+  const [incidentId, setIncidentId] = useState<string | null>(paramIncidentId);
+  const [members, setMembers] = useState<IncidentMember[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [status, setStatus] = useState<IncidentStatus>('open');
+  const [userPing, setUserPing] = useState<LocationPing | null>(null);
+  const [nearbyClusters, setNearbyClusters] = useState<NearbyCluster[]>([]);
+  const prevMembersRef = useRef<IncidentMember[]>([]);
+  const justLeftRef = useRef(false);
+
+  const userCoordinate = userPing
+    ? { latitude: userPing.lat, longitude: userPing.lng }
+    : null;
+
+  const refreshIncident = useCallback(async (activeIncidentId: string) => {
+    const result = await Promise.all([
+      getIncident(activeIncidentId),
+      getIncidentMembers(activeIncidentId),
+    ]).catch(() => null);
+
+    // A read can fail transiently while an incident is being torn down (our
+    // membership may already be gone). Treat that the same as "gone".
+    if (!result) {
+      setIncidentId(null);
+      setMembers([]);
+      setStatus('open');
+      prevMembersRef.current = [];
+      return;
+    }
+    const [incident, nextMembers] = result;
+
+    // Incident is gone (closed and cleaned up) or explicitly closed:
+    // drop back to the map.
+    if (!incident || incident.status === 'closed') {
+      const endedOnMe = !justLeftRef.current;
+      setIncidentId(null);
+      setMembers([]);
+      setStatus('open');
+      prevMembersRef.current = [];
+      if (endedOnMe) {
+        Alert.alert(
+          'Group ended',
+          'This group has ended. File a new report if it\u2019s still happening.',
+        );
+      }
+      return;
+    }
+
+    // If someone who was here is now gone, say so (but never about myself).
+    const nextIds = new Set(nextMembers.map((m) => m.user_id));
+    const left = prevMembersRef.current.filter(
+      (m) => m.user_id !== userId && !nextIds.has(m.user_id),
+    );
+    if (left.length > 0) {
+      const names = left.map((m) => m.profile?.display_name ?? 'Someone').join(', ');
+      Alert.alert('Someone left', `${names} left the group.`);
+    }
+    prevMembersRef.current = nextMembers;
+
+    setStatus(incident.status);
+    setMembers(nextMembers);
+  }, [userId]);
+
+  useEffect(() => {
+    if (paramIncidentId) {
+      setIncidentId(paramIncidentId);
+    }
+  }, [paramIncidentId]);
+
+  useEffect(() => {
+    async function bootstrap() {
+      if (!isFirebaseConfigured) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        await ensureAnonymousSession();
+        const id = await getCurrentUserId();
+        if (!id) {
+          throw new Error('Unable to start anonymous session');
+        }
+
+        const profile = await getProfile(id);
+        if (!profile) {
+          router.replace('/setup');
+          return;
+        }
+
+        setUserId(id);
+        const granted = await requestLocationPermission();
+        if (granted) {
+          const ping = await getCurrentLocationPing();
+          setUserPing(ping);
+        }
+      } catch (error) {
+        Alert.alert('Startup failed', error instanceof Error ? error.message : 'Unknown error');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void bootstrap();
+  }, [router]);
+
+  useEffect(() => {
+    if (!incidentId) {
+      return;
+    }
+
+    justLeftRef.current = false;
+    prevMembersRef.current = [];
+    void refreshIncident(incidentId);
+    const unsubscribeRealtime = subscribeToIncident(incidentId, () => {
+      void refreshIncident(incidentId);
+    });
+
+    return unsubscribeRealtime;
+  }, [incidentId, refreshIncident]);
+
+  useEffect(() => {
+    if (!userPing) {
+      return;
+    }
+
+    const radius = incidentId ? 200 : 200;
+    const unsubscribe = subscribeToNearbyIncidents(
+      userPing.lat,
+      userPing.lng,
+      radius,
+      setNearbyClusters,
+    );
+
+    return unsubscribe;
+  }, [userPing?.lat, userPing?.lng, incidentId]);
+
+  useEffect(() => {
+    const intervalMs = incidentId ? 5000 : 10000;
+    const stopPingLoop = startLocationPingLoop((ping) => {
+      setUserPing(ping);
+
+      if (!incidentId) {
+        return;
+      }
+
+      void pingIncident(incidentId, ping.lat, ping.lng, ping.heading, ping.speed).catch(() => {
+        // Ignore transient ping failures.
+      });
+    }, intervalMs);
+
+    return stopPingLoop;
+  }, [incidentId]);
+
+  async function ensureLocation(): Promise<LocationPing | null> {
+    const granted = await requestLocationPermission();
+    if (!granted) {
+      Alert.alert('Location required', 'Enable location to find nearby people bothered by loud audio.');
+      return null;
+    }
+
+    const ping = await getCurrentLocationPing();
+    setUserPing(ping);
+    return ping;
+  }
+
+  async function handleReport() {
+    setReporting(true);
+    try {
+      const ping = await ensureLocation();
+      if (!ping) {
+        return;
+      }
+
+      const result = await reportNuisance(
+        ping.lat,
+        ping.lng,
+        ping.heading,
+        ping.speed,
+        description,
+      );
+
+      setIncidentId(result.incident_id);
+      setStatus(result.status);
+      setDescription('');
+      await refreshIncident(result.incident_id);
+    } catch (error) {
+      Alert.alert('Report failed', error instanceof Error ? error.message : 'Unknown error');
+    } finally {
+      setReporting(false);
+    }
+  }
+
+  async function handleJoinCluster(targetIncidentId: string) {
+    if (incidentId) {
+      return;
+    }
+
+    setReporting(true);
+    try {
+      const ping = await ensureLocation();
+      if (!ping) {
+        return;
+      }
+
+      const result = await joinIncident(
+        targetIncidentId,
+        ping.lat,
+        ping.lng,
+        ping.heading,
+        ping.speed,
+      );
+
+      setIncidentId(result.incident_id);
+      setStatus(result.status);
+      await refreshIncident(result.incident_id);
+    } catch (error) {
+      Alert.alert('Unable to join', error instanceof Error ? error.message : 'Unknown error');
+    } finally {
+      setReporting(false);
+    }
+  }
+
+  async function handleRole(role: 'confronter' | 'partner') {
+    if (!incidentId) {
+      return;
+    }
+
+    try {
+      await setMemberRole(incidentId, role);
+      await refreshIncident(incidentId);
+    } catch (error) {
+      Alert.alert('Role unavailable', error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+
+  async function handleGo() {
+    if (!incidentId) {
+      return;
+    }
+
+    setActing(true);
+    try {
+      await triggerGo(incidentId);
+      await refreshIncident(incidentId);
+    } catch (error) {
+      Alert.alert('Unable to start', error instanceof Error ? error.message : 'Unknown error');
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function handleDone() {
+    if (!incidentId) {
+      return;
+    }
+
+    justLeftRef.current = true;
+    setActing(true);
+    try {
+      await leaveIncident(incidentId);
+      setIncidentId(null);
+      setMembers([]);
+      setStatus('open');
+    } catch (error) {
+      Alert.alert('Unable to leave', error instanceof Error ? error.message : 'Unknown error');
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function handleComplete() {
+    if (!incidentId) {
+      return;
+    }
+
+    justLeftRef.current = true;
+    setActing(true);
+    try {
+      await completeIncident(incidentId);
+      setIncidentId(null);
+      setMembers([]);
+      setStatus('open');
+    } catch (error) {
+      Alert.alert('Unable to complete', error instanceof Error ? error.message : 'Unknown error');
+    } finally {
+      setActing(false);
+    }
+  }
+
+  const sheetState = useMemo(
+    () => deriveSheetState(incidentId, status, members, userId),
+    [incidentId, status, members, userId],
+  );
+
+  const othersCount = userId ? countOthers(members, userId) : 0;
+  const confronter = getConfronter(members);
+  const isConfronter = confronter?.user_id === userId;
+  const isPartner = members.some((member) => member.user_id === userId && member.role === 'partner');
+
+  if (loading) {
+    return <LoadingState message="Loading Flint..." />;
+  }
+
+  if (!isFirebaseConfigured) {
+    return (
+      <Screen>
+        <Title>Configure Firebase</Title>
+        <Subtitle>Add your Firebase config to lib/firebase.ts and restart Expo.</Subtitle>
+      </Screen>
+    );
+  }
+
+  if (Platform.OS === 'web') {
+    return (
+      <Screen>
+        <Title>Map view unavailable on web</Title>
+        <Subtitle>Use Expo Go on iOS or Android for the live map experience.</Subtitle>
+        <Card>
+          <Body>Nearby reports: {nearbyClusters.length}</Body>
+          {!incidentId ? (
+            <Button
+              disabled={reporting}
+              label={reporting ? 'Checking in...' : 'Report nuisance'}
+              onPress={handleReport}
+            />
+          ) : (
+            <>
+              <Body>Others nearby: {othersCount}</Body>
+              <Body>Status: {status}</Body>
+              {sheetState === 'roles' && (
+                <>
+                  <Button label="I'll speak first" onPress={() => handleRole('confronter')} />
+                  <Button
+                    label="I'll back them up"
+                    onPress={() => handleRole('partner')}
+                    variant="secondary"
+                  />
+                </>
+              )}
+              {(sheetState === 'ready' || sheetState === 'go') && isConfronter && sheetState === 'ready' && (
+                <Button disabled={acting} label="Go" onPress={handleGo} />
+              )}
+              <Button disabled={acting} label="Leave" onPress={handleDone} />
+            </>
+          )}
+        </Card>
+      </Screen>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <FlintMap
+        userCoordinate={userCoordinate}
+        members={members}
+        userId={userId}
+        nearbyClusters={nearbyClusters}
+        excludeIncidentId={incidentId}
+        onClusterPress={handleJoinCluster}
+      />
+      <MapBottomSheet
+        state={sheetState}
+        othersCount={othersCount}
+        status={status}
+        reporting={reporting}
+        acting={acting}
+        description={description}
+        members={members}
+        userId={userId}
+        isConfronter={isConfronter}
+        isPartner={isPartner}
+        onDescriptionChange={setDescription}
+        onReport={handleReport}
+        onRole={handleRole}
+        onGo={handleGo}
+        onDone={handleDone}
+        onComplete={handleComplete}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#16213e',
+  },
+});
+</file>
+
+<file path="lib/incidents.ts">
+// lib/incidents.ts
+import {
+  ref,
+  get,
+  set,
+  update,
+  push,
+  onValue,
+  query,
+  orderByChild,
+  equalTo,
+  runTransaction,
+} from 'firebase/database';
+import { auth, db } from './firebase';
+import { encodeGeohash } from './location';
+import type { NearbyCluster } from './map';
+import type {
+  Incident,
+  IncidentMember,
+  MatchIncidentResponse,
+  MemberRole,
+} from './types';
+
+export type { NearbyCluster } from './map';
+
+// Geohash bucket size for nearby queries (~0.6km x 1.2km cells).
+const GEOHASH_PRECISION = 6;
+
+// One precision-6 cell spans roughly this many degrees.
+const LAT_CELL_DEGREES = 0.0055;
+const LNG_CELL_DEGREES = 0.011;
+
+// The geohash of the user's cell plus its 8 neighbors (a 3x3 grid).
+// We query all 9 so we never miss someone sitting just across a cell line.
+function neighborGeohashes(lat: number, lng: number): string[] {
+  const cells = new Set<string>();
+  for (const dLat of [-LAT_CELL_DEGREES, 0, LAT_CELL_DEGREES]) {
+    for (const dLng of [-LNG_CELL_DEGREES, 0, LNG_CELL_DEGREES]) {
+      cells.add(encodeGeohash(lat + dLat, lng + dLng, GEOHASH_PRECISION));
+    }
+  }
+  return Array.from(cells);
+}
+
+// Read only the rows at `path` whose geohash falls in the 9 nearby cells,
+// instead of downloading the whole table. Works for both the full
+// 'incidents' table and the lightweight 'incident_summaries' table.
+async function fetchByGeohash(
+  path: 'incidents' | 'incident_summaries',
+  lat: number,
+  lng: number,
+): Promise<Array<[string, Record<string, unknown>]>> {
+  const buckets = neighborGeohashes(lat, lng);
+  const snaps = await Promise.all(
+    buckets.map((bucket) =>
+      get(query(ref(db, path), orderByChild('geohash'), equalTo(bucket))),
+    ),
+  );
+
+  const result: Array<[string, Record<string, unknown>]> = [];
+  const seen = new Set<string>();
+  for (const snap of snaps) {
+    if (!snap.exists()) continue;
+    const rows = snap.val() as Record<string, Record<string, unknown>>;
+    for (const [id, row] of Object.entries(rows)) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      result.push([id, row]);
+    }
+  }
+  return result;
+}
+
+// True if a summary should appear on the map (open/ready, not expired, has a position).
+function isSummaryActive(summary: Record<string, unknown>, now: number): boolean {
+  return (
+    ['open', 'ready'].includes(String(summary.status)) &&
+    Number(summary.expires_at) > now &&
+    summary.lat != null &&
+    summary.lng != null
+  );
+}
+
+function haversineMeters(
+  lat1: number, lng1: number,
+  lat2: number, lng2: number,
+): number {
+  const toRad = (v: number) => (v * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function isJoinableIncident(incident: Record<string, unknown>, now: number): boolean {
+  return (
+    ['open', 'ready'].includes(String(incident.status)) &&
+    Number(incident.expires_at) > now &&
+    incident.last_lat != null &&
+    incident.last_lng != null
+  );
+}
+
+async function checkRateLimit(userId: string): Promise<void> {
+  const oneHourAgo = Date.now() - 60 * 60 * 1000;
+  const snap = await get(ref(db, `rate_limits/${userId}`));
+  if (!snap.exists()) return;
+
+  const entries = snap.val() as Record<string, number>;
+  const recent = Object.values(entries).filter((t) => t > oneHourAgo);
+  if (recent.length >= 3) {
+    throw new Error('Rate limit exceeded — max 3 reports per hour.');
+  }
+
+  // Tidy up timestamps older than an hour so this list can't grow forever.
+  const removeStale: Record<string, null> = {};
+  for (const [key, t] of Object.entries(entries)) {
+    if (t <= oneHourAgo) removeStale[key] = null;
+  }
+  if (Object.keys(removeStale).length > 0) {
+    await update(ref(db, `rate_limits/${userId}`), removeStale);
+  }
+}
+
+async function recordRateLimit(userId: string): Promise<void> {
+  await push(ref(db, `rate_limits/${userId}`), Date.now());
+}
+
+export async function reportNuisance(
+  lat: number,
+  lng: number,
+  heading: number | null,
+  speed: number | null,
+  description?: string | null,
+): Promise<MatchIncidentResponse> {
+  const userId = auth.currentUser?.uid;
+  if (!userId) throw new Error('Not signed in');
+
+  await checkRateLimit(userId);
+
+  const now = Date.now();
+  const expiresAt = now + 10 * 60 * 1000;
+  const geohash = encodeGeohash(lat, lng, GEOHASH_PRECISION);
+
+  // Every report creates its own incident — no auto-merge.
+  const newRef = push(ref(db, 'incidents'));
+  const incidentId = newRef.key!;
+  await set(newRef, {
+    description: description?.trim().slice(0, 40) || null,
+    creator_uid: userId,
+    geohash,
+    status: 'open',
+    expires_at: expiresAt,
+    last_lat: lat,
+    last_lng: lng,
+    last_heading: heading,
+    last_speed: speed,
+    created_at: now,
+  });
+
+  await recordRateLimit(userId);
+  await _upsertMember(incidentId, userId, lat, lng, heading, speed);
+  await _refreshExpiry(incidentId, lat, lng, heading, speed, expiresAt);
+  await _checkReady(incidentId);
+  await _writeSummary(incidentId);
+
+  return _buildResponse(incidentId, userId);
+}
+
+export async function joinIncident(
+  incidentId: string,
+  lat: number,
+  lng: number,
+  heading: number | null,
+  speed: number | null,
+): Promise<MatchIncidentResponse> {
+  const userId = auth.currentUser?.uid;
+  if (!userId) throw new Error('Not signed in');
+
+  const incidentSnap = await get(ref(db, `incidents/${incidentId}`));
+  if (!incidentSnap.exists()) {
+    throw new Error('Report not found');
+  }
+
+  const incident = incidentSnap.val() as Record<string, unknown>;
+  const now = Date.now();
+  if (!isJoinableIncident(incident, now)) {
+    throw new Error('This report is no longer active');
+  }
+
+  const expiresAt = now + 10 * 60 * 1000;
+  await _upsertMember(incidentId, userId, lat, lng, heading, speed);
+  await _refreshExpiry(incidentId, lat, lng, heading, speed, expiresAt);
+  await _checkReady(incidentId);
+  await _writeSummary(incidentId);
+
+  return _buildResponse(incidentId, userId);
+}
+
+export async function pingIncident(
+  incidentId: string,
+  lat: number,
+  lng: number,
+  heading: number | null,
+  speed: number | null,
+): Promise<MatchIncidentResponse> {
+  const userId = auth.currentUser?.uid;
+  if (!userId) throw new Error('Not signed in');
+
+  const expiresAt = Date.now() + 10 * 60 * 1000;
+  await _upsertMember(incidentId, userId, lat, lng, heading, speed);
+
+  // Only the creator's movement repositions the dot. Everyone else keeps the
+  // incident alive without dragging it to their own location.
+  const creatorSnap = await get(ref(db, `incidents/${incidentId}/creator_uid`));
+  if (creatorSnap.exists() && creatorSnap.val() === userId) {
+    await _refreshExpiry(incidentId, lat, lng, heading, speed, expiresAt);
+    await _refreshSummaryIfStale(incidentId);
+  } else {
+    await _touchExpiry(incidentId, expiresAt);
+  }
+
+  return _buildResponse(incidentId, userId);
+}
+
+async function _upsertMember(
+  incidentId: string,
+  userId: string,
+  lat: number,
+  lng: number,
+  heading: number | null,
+  speed: number | null,
+): Promise<void> {
+  const memberRef = ref(db, `incident_members/${incidentId}/${userId}`);
+  const snap = await get(memberRef);
+  if (snap.exists()) {
+    await update(memberRef, { last_lat: lat, last_lng: lng, heading, speed });
+  } else {
+    await set(memberRef, {
+      user_id: userId,
+      role: 'bothered',
+      last_lat: lat,
+      last_lng: lng,
+      heading,
+      speed,
+      joined_at: Date.now(),
+    });
+  }
+}
+
+async function _refreshExpiry(
+  incidentId: string,
+  lat: number,
+  lng: number,
+  heading: number | null,
+  speed: number | null,
+  expiresAt: number,
+): Promise<void> {
+  await update(ref(db, `incidents/${incidentId}`), {
+    last_lat: lat,
+    last_lng: lng,
+    last_heading: heading,
+    last_speed: speed,
+    geohash: encodeGeohash(lat, lng, GEOHASH_PRECISION),
+    expires_at: expiresAt,
+  });
+}
+
+// Keep the incident alive without moving the dot — used for non-creator pings.
+async function _touchExpiry(incidentId: string, expiresAt: number): Promise<void> {
+  await update(ref(db, `incidents/${incidentId}`), { expires_at: expiresAt });
+}
+
+async function _checkReady(incidentId: string): Promise<void> {
+  const snap = await get(ref(db, `incident_members/${incidentId}`));
+  if (!snap.exists()) return;
+
+  const members: Record<string, { role: MemberRole }> = snap.val();
+  const roles = Object.values(members).map((m) => m.role);
+  const hasConfronter = roles.includes('confronter');
+  const partnerCount = roles.filter((r) => r === 'partner').length;
+
+  if (hasConfronter && partnerCount >= 1) {
+    await update(ref(db, `incidents/${incidentId}`), { status: 'ready' });
+  }
+}
+
+async function _buildResponse(
+  incidentId: string,
+  userId: string,
+): Promise<MatchIncidentResponse> {
+  const [incidentSnap, membersSnap] = await Promise.all([
+    get(ref(db, `incidents/${incidentId}`)),
+    get(ref(db, `incident_members/${incidentId}`)),
+  ]);
+
+  const incident = incidentSnap.val();
+  const members = membersSnap.exists() ? Object.values(membersSnap.val()) : [];
+  const memberCount = members.length;
+  const othersCount = Math.max(memberCount - 1, 0);
+
+  return {
+    incident_id: incidentId,
+    member_count: memberCount,
+    others_count: othersCount,
+    status: incident?.status ?? 'open',
+  };
+}
+
+const SUMMARY_REFRESH_MS = 12000; // a dot you haven't joined refreshes at most this often
+
+// The lightweight "dot" the map listens to: position, head count, status.
+// Written only at meaningful moments (report / join / role / go / close),
+// never on every GPS ping — that is what stops the map waking up constantly.
+async function _writeSummary(incidentId: string): Promise<void> {
+  const [incidentSnap, membersSnap] = await Promise.all([
+    get(ref(db, `incidents/${incidentId}`)),
+    get(ref(db, `incident_members/${incidentId}`)),
+  ]);
+  if (!incidentSnap.exists()) return;
+
+  const incident = incidentSnap.val() as Record<string, unknown>;
+  const memberCount = membersSnap.exists() ? Object.keys(membersSnap.val()).length : 0;
+
+  await set(ref(db, `incident_summaries/${incidentId}`), {
+    lat: incident.last_lat ?? null,
+    lng: incident.last_lng ?? null,
+    geohash: incident.geohash ?? null,
+    description: incident.description ?? null,
+    status: incident.status ?? 'open',
+    member_count: memberCount,
+    expires_at: incident.expires_at ?? 0,
+    updated_at: Date.now(),
+  });
+}
+
+// Called from the 5-second ping loop. Refreshes the dot only if it has not
+// been refreshed recently, so a steady stream of pings does not keep
+// rewriting the summary (and waking everyone's map).
+async function _refreshSummaryIfStale(incidentId: string): Promise<void> {
+  const snap = await get(ref(db, `incident_summaries/${incidentId}/updated_at`));
+  const lastUpdated = snap.exists() ? Number(snap.val()) : 0;
+  if (Date.now() - lastUpdated > SUMMARY_REFRESH_MS) {
+    await _writeSummary(incidentId);
+  }
+}
+
+// Delete an incident and everything attached to it, in one write.
+async function _deleteIncidentData(incidentId: string): Promise<void> {
+  // Delete the incident and its map dot first. Both writes are authorized by
+  // our membership record, so it must still exist while they run — deleting it
+  // in the same multi-path update makes the rules see us as a non-member and
+  // denies the write. Remove the members last, in a separate write.
+  await update(ref(db), {
+    [`incidents/${incidentId}`]: null,
+    [`incident_summaries/${incidentId}`]: null,
+  });
+  await set(ref(db, `incident_members/${incidentId}`), null);
+}
+
+// Record one resolved nuisance for the permanent, anonymized metric.
+// Bumps a lifetime counter and logs a de-identified event (no names,
+// no user IDs, no precise location — just a coarse ~20km area cell).
+async function _recordResolved(
+  incident: Record<string, unknown>,
+  memberCount: number,
+): Promise<void> {
+  await runTransaction(ref(db, 'metrics/incidents_resolved'), (current) => (current ?? 0) + 1);
+
+  const createdAt = Number(incident.created_at ?? Date.now());
+  const coarseArea =
+    typeof incident.geohash === 'string' ? incident.geohash.slice(0, 4) : null;
+
+  await push(ref(db, 'metrics/resolved_events'), {
+    resolved_at: Date.now(),
+    duration_seconds: Math.max(0, Math.round((Date.now() - createdAt) / 1000)),
+    group_size: memberCount,
+    area: coarseArea,
+  });
+}
+
+export async function listNearbyIncidents(
+  lat: number,
+  lng: number,
+  radiusMeters = 200,
+): Promise<NearbyCluster[]> {
+  const now = Date.now();
+  const summaries = await fetchByGeohash('incident_summaries', lat, lng);
+  const clusters: NearbyCluster[] = [];
+
+  for (const [incidentId, summary] of summaries) {
+    // Opportunistic cleanup: if we happen to read a timed-out incident,
+    // delete its leftover data so dead records don't pile up.
+    if (Number(summary.expires_at) <= now) {
+      void _deleteIncidentData(incidentId);
+      continue;
+    }
+    if (!isSummaryActive(summary, now)) continue;
+
+    const summaryLat = Number(summary.lat);
+    const summaryLng = Number(summary.lng);
+    const distance = haversineMeters(lat, lng, summaryLat, summaryLng);
+    if (distance > radiusMeters) continue;
+
+    const memberCount = Number(summary.member_count ?? 0);
+    if (memberCount === 0) continue;
+
+    clusters.push({
+      incidentId,
+      lat: summaryLat,
+      lng: summaryLng,
+      memberCount,
+      description: typeof summary.description === 'string' ? summary.description : null,
+    });
+  }
+
+  return clusters.sort((a, b) => b.memberCount - a.memberCount);
+}
+
+export function subscribeToNearbyIncidents(
+  lat: number,
+  lng: number,
+  radiusMeters: number,
+  onChange: (clusters: NearbyCluster[]) => void,
+): () => void {
+  const buckets = neighborGeohashes(lat, lng);
+  let active = true;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  // Collapse a burst of callbacks (e.g. all 9 bucket listeners firing at
+  // once on attach) into a single read.
+  const refresh = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(async () => {
+      if (!active) return;
+      const clusters = await listNearbyIncidents(lat, lng, radiusMeters);
+      onChange(clusters);
+    }, 250);
+  };
+
+  // Listen ONLY to the lightweight summaries in the 9 nearby cells.
+  // We no longer listen to `incidents` or `incident_members`, so other
+  // people's 5-second GPS pings never wake this map.
+  const unsubscribers = buckets.map((bucket) =>
+    onValue(
+      query(ref(db, 'incident_summaries'), orderByChild('geohash'), equalTo(bucket)),
+      refresh,
+    ),
+  );
+
+  return () => {
+    active = false;
+    if (timer) clearTimeout(timer);
+    unsubscribers.forEach((unsub) => unsub());
+  };
+}
+
+export async function setMemberRole(
+  incidentId: string,
+  role: MemberRole,
+): Promise<void> {
+  const userId = auth.currentUser?.uid;
+  if (!userId) throw new Error('Not signed in');
+
+  if (role === 'confronter') {
+    // Atomically claim the single confronter slot. The updater runs against
+    // the latest value, so if two people tap "I'll speak first" at the same
+    // instant, only the first write wins; the second sees the slot already
+    // taken, aborts, and we tell that user it's unavailable.
+    const claim = await runTransaction(
+      ref(db, `incidents/${incidentId}/confronter_uid`),
+      (current) => (current == null || current === userId ? userId : undefined),
+    );
+    if (!claim.committed) {
+      throw new Error('Someone is already the confronter');
+    }
+  } else {
+    // Choosing a non-confronter role: if we were the one holding the
+    // confronter slot, release it so someone else can claim it.
+    await runTransaction(
+      ref(db, `incidents/${incidentId}/confronter_uid`),
+      (current) => (current === userId ? null : undefined),
+    );
+  }
+
+  await update(ref(db, `incident_members/${incidentId}/${userId}`), { role });
+  await _checkReady(incidentId);
+  await _writeSummary(incidentId);
+}
+
+export async function triggerGo(incidentId: string): Promise<void> {
+  // Group size right now, for the resolved metric.
+  const membersSnap = await get(ref(db, `incident_members/${incidentId}`));
+  const memberCount = membersSnap.exists() ? Object.keys(membersSnap.val()).length : 0;
+
+  // Flip to 'go' only on the first open/ready -> go transition, so the
+  // resolved metric is counted exactly once even if Go is tapped twice.
+  const tx = await runTransaction(ref(db, `incidents/${incidentId}/status`), (current) =>
+    current === 'open' || current === 'ready' ? 'go' : undefined,
+  );
+  if (!tx.committed) return;
+
+  await update(ref(db, `incidents/${incidentId}`), { go_at: Date.now() });
+
+  // "Resolved" = the group reached the confrontation step. Record it once, here.
+  const incidentSnap = await get(ref(db, `incidents/${incidentId}`));
+  const incident = incidentSnap.exists() ? (incidentSnap.val() as Record<string, unknown>) : {};
+  await _recordResolved(incident, memberCount);
+
+  await _writeSummary(incidentId);
+}
+
+export async function leaveIncident(incidentId: string): Promise<void> {
+  const userId = auth.currentUser?.uid;
+  if (!userId) throw new Error('Not signed in');
+
+  const membersSnap = await get(ref(db, `incident_members/${incidentId}`));
+  const members = membersSnap.exists()
+    ? (membersSnap.val() as Record<string, { role?: string }>)
+    : {};
+  const others = Object.keys(members).filter((id) => id !== userId);
+
+  // If the creator leaves, the whole group dissolves for everyone.
+  const creatorSnap = await get(ref(db, `incidents/${incidentId}/creator_uid`));
+  if (creatorSnap.exists() && creatorSnap.val() === userId) {
+    await _deleteIncidentData(incidentId);
+    return;
+  }
+
+  // If I'm the last one here, the incident dissolves. This whole-incident
+  // delete is allowed because, at this instant, I'm still a member.
+  if (others.length === 0) {
+    await _deleteIncidentData(incidentId);
+    return;
+  }
+
+  // Others remain. Do everything in ONE atomic write, so it's all authorized
+  // while I'm still a member: remove myself, tick the dot's head count down,
+  // revert the group if it can no longer be "ready," and release the
+  // confronter slot if I was holding it.
+  const incidentSnap = await get(ref(db, `incidents/${incidentId}`));
+  const incident = incidentSnap.exists() ? (incidentSnap.val() as Record<string, unknown>) : null;
+
+  const updates: Record<string, unknown> = {
+    [`incident_members/${incidentId}/${userId}`]: null,
+    [`incident_summaries/${incidentId}/member_count`]: others.length,
+    [`incident_summaries/${incidentId}/updated_at`]: Date.now(),
+  };
+
+  // If the people left behind can no longer form a ready group (need a
+  // confronter and at least one partner) and we aren't mid-confrontation,
+  // drop the incident back to "open".
+  const remainingRoles = others.map((id) => members[id]?.role);
+  const stillReady =
+    remainingRoles.includes('confronter') && remainingRoles.some((r) => r === 'partner');
+  if (incident && incident.status === 'ready' && !stillReady) {
+    updates[`incidents/${incidentId}/status`] = 'open';
+    updates[`incident_summaries/${incidentId}/status`] = 'open';
+  }
+
+  if (incident && incident.confronter_uid === userId) {
+    updates[`incidents/${incidentId}/confronter_uid`] = null;
+  }
+
+  await update(ref(db), updates);
+}
+
+export async function completeIncident(incidentId: string): Promise<void> {
+  const userId = auth.currentUser?.uid;
+  if (!userId) throw new Error('Not signed in');
+
+  // The confrontation is over. Tear the whole incident down for everyone —
+  // authorized because the caller is still a member at this instant.
+  await _deleteIncidentData(incidentId);
+}
+
+export async function getIncident(incidentId: string): Promise<Incident | null> {
+  const snap = await get(ref(db, `incidents/${incidentId}`));
+  if (!snap.exists()) return null;
+  const d = snap.val();
+  const toMs = (v: unknown): number | null =>
+    typeof v === 'number' && Number.isFinite(v) ? v : null;
+  const goMs = toMs(d.go_at);
+  return {
+    id: incidentId,
+    description: d.description ?? null,
+    creator_uid: d.creator_uid ?? null,
+    geohash: d.geohash,
+    status: d.status,
+    expires_at: new Date(toMs(d.expires_at) ?? Date.now()).toISOString(),
+    last_lat: d.last_lat ?? null,
+    last_lng: d.last_lng ?? null,
+    go_at: goMs != null ? new Date(goMs).toISOString() : null,
+    created_at: new Date(toMs(d.created_at) ?? Date.now()).toISOString(),
+  };
+}
+
+export async function getIncidentMembers(
+  incidentId: string,
+): Promise<IncidentMember[]> {
+  const [membersSnap, profilesSnap] = await Promise.all([
+    get(ref(db, `incident_members/${incidentId}`)),
+    get(ref(db, 'profiles')),
+  ]);
+
+  if (!membersSnap.exists()) return [];
+
+  const profiles: Record<string, { display_name: string; shirt_color?: string | null }> =
+    profilesSnap.exists() ? profilesSnap.val() : {};
+
+  return Object.entries(membersSnap.val() as Record<string, Record<string, unknown>>)
+    .map(([memberUserId, m]) => ({
+      id: `${incidentId}_${memberUserId}`,
+      incident_id: incidentId,
+      user_id: memberUserId,
+      role: m.role as MemberRole,
+      last_lat: (m.last_lat as number | null) ?? null,
+      last_lng: (m.last_lng as number | null) ?? null,
+      heading: (m.heading as number | null) ?? null,
+      speed: (m.speed as number | null) ?? null,
+      joined_at: new Date(m.joined_at as number).toISOString(),
+      profile: profiles[memberUserId]
+        ? {
+            id: memberUserId,
+            display_name: profiles[memberUserId].display_name,
+            shirt_color: profiles[memberUserId].shirt_color ?? null,
+          }
+        : undefined,
+    }))
+    .sort((a, b) => a.joined_at.localeCompare(b.joined_at));
+}
+
+export function subscribeToIncident(
+  incidentId: string,
+  onChange: () => void,
+): () => void {
+  const incidentRef = ref(db, `incidents/${incidentId}`);
+  const membersRef = ref(db, `incident_members/${incidentId}`);
+
+  const unsubIncident = onValue(incidentRef, onChange);
+  const unsubMembers = onValue(membersRef, onChange);
+
+  return () => {
+    unsubIncident();
+    unsubMembers();
+  };
+}
+
+export function countOthers(members: IncidentMember[], userId: string): number {
+  return members.filter((m) => m.user_id !== userId).length;
+}
+
+export function getConfronter(members: IncidentMember[]): IncidentMember | undefined {
+  return members.find((m) => m.role === 'confronter');
+}
+
+export function countPartners(members: IncidentMember[]): number {
+  return members.filter((m) => m.role === 'partner').length;
+}
+
+export function isReadyGroup(members: IncidentMember[]): boolean {
+  return Boolean(getConfronter(members)) && countPartners(members) >= 1;
 }
 </file>
 

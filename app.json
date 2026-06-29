@@ -20,7 +20,11 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.BLUETOOTH_ADVERTISE"
+      ],
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -42,6 +46,14 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "Flint uses your location to find nearby people bothered by loud phone audio, so you can speak up together."
+        }
+      ],
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "modes": ["central"],
+          "bluetoothAlwaysPermission": "Flint uses Bluetooth to sense how many people near you are bothered by the same audio."
         }
       ]
     ],

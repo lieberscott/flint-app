@@ -150,6 +150,7 @@ export async function reportNuisance(
   const incidentId = newRef.key!;
   await set(newRef, {
     description: description?.trim().slice(0, 40) || null,
+    creator_uid: userId,
     geohash,
     status: 'open',
     expires_at: expiresAt,
@@ -211,8 +212,16 @@ export async function pingIncident(
 
   const expiresAt = Date.now() + 10 * 60 * 1000;
   await _upsertMember(incidentId, userId, lat, lng, heading, speed);
-  await _refreshExpiry(incidentId, lat, lng, heading, speed, expiresAt);
-  await _refreshSummaryIfStale(incidentId);
+
+  // Only the creator's movement repositions the dot. Everyone else keeps the
+  // incident alive without dragging it to their own location.
+  const creatorSnap = await get(ref(db, `incidents/${incidentId}/creator_uid`));
+  if (creatorSnap.exists() && creatorSnap.val() === userId) {
+    await _refreshExpiry(incidentId, lat, lng, heading, speed, expiresAt);
+    await _refreshSummaryIfStale(incidentId);
+  } else {
+    await _touchExpiry(incidentId, expiresAt);
+  }
 
   return _buildResponse(incidentId, userId);
 }
@@ -258,6 +267,11 @@ async function _refreshExpiry(
     geohash: encodeGeohash(lat, lng, GEOHASH_PRECISION),
     expires_at: expiresAt,
   });
+}
+
+// Keep the incident alive without moving the dot — used for non-creator pings.
+async function _touchExpiry(incidentId: string, expiresAt: number): Promise<void> {
+  await update(ref(db, `incidents/${incidentId}`), { expires_at: expiresAt });
 }
 
 async function _checkReady(incidentId: string): Promise<void> {
@@ -509,6 +523,13 @@ export async function leaveIncident(incidentId: string): Promise<void> {
     : {};
   const others = Object.keys(members).filter((id) => id !== userId);
 
+  // If the creator leaves, the whole group dissolves for everyone.
+  const creatorSnap = await get(ref(db, `incidents/${incidentId}/creator_uid`));
+  if (creatorSnap.exists() && creatorSnap.val() === userId) {
+    await _deleteIncidentData(incidentId);
+    return;
+  }
+
   // If I'm the last one here, the incident dissolves. This whole-incident
   // delete is allowed because, at this instant, I'm still a member.
   if (others.length === 0) {
@@ -566,6 +587,7 @@ export async function getIncident(incidentId: string): Promise<Incident | null> 
   return {
     id: incidentId,
     description: d.description ?? null,
+    creator_uid: d.creator_uid ?? null,
     geohash: d.geohash,
     status: d.status,
     expires_at: new Date(toMs(d.expires_at) ?? Date.now()).toISOString(),

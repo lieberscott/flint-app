@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android", "web"],
+  "apple": {
+    "modules": ["FlintBleModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.flintble.FlintBleModule"]
+  }
+}

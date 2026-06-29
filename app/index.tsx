@@ -65,6 +65,7 @@ export default function HomeScreen() {
   const [userPing, setUserPing] = useState<LocationPing | null>(null);
   const [nearbyClusters, setNearbyClusters] = useState<NearbyCluster[]>([]);
   const prevMembersRef = useRef<IncidentMember[]>([]);
+  const justLeftRef = useRef(false);
 
   const userCoordinate = userPing
     ? { latitude: userPing.lat, longitude: userPing.lng }
@@ -90,10 +91,17 @@ export default function HomeScreen() {
     // Incident is gone (closed and cleaned up) or explicitly closed:
     // drop back to the map.
     if (!incident || incident.status === 'closed') {
+      const endedOnMe = !justLeftRef.current;
       setIncidentId(null);
       setMembers([]);
       setStatus('open');
       prevMembersRef.current = [];
+      if (endedOnMe) {
+        Alert.alert(
+          'Group ended',
+          'This group has ended. File a new report if it\u2019s still happening.',
+        );
+      }
       return;
     }
 
@@ -159,6 +167,7 @@ export default function HomeScreen() {
       return;
     }
 
+    justLeftRef.current = false;
     prevMembersRef.current = [];
     void refreshIncident(incidentId);
     const unsubscribeRealtime = subscribeToIncident(incidentId, () => {
@@ -304,6 +313,7 @@ export default function HomeScreen() {
       return;
     }
 
+    justLeftRef.current = true;
     setActing(true);
     try {
       await leaveIncident(incidentId);
@@ -322,6 +332,7 @@ export default function HomeScreen() {
       return;
     }
 
+    justLeftRef.current = true;
     setActing(true);
     try {
       await completeIncident(incidentId);
@@ -424,6 +435,10 @@ export default function HomeScreen() {
         onDone={handleDone}
         onComplete={handleComplete}
       />
+      {/* TEMP — remove after testing */}
+      <View style={styles.devLaunch}>
+          <Button label="Courage test" onPress={() => router.push('/signal')} />
+        </View>
     </View>
   );
 }
@@ -433,4 +448,5 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#16213e',
   },
+  devLaunch: { position: 'absolute', top: 60, left: 16, right: 16 },
 });

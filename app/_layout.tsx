@@ -15,6 +15,8 @@ export default function RootLayout() {
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="setup" options={{ title: 'Setup', headerBackVisible: false }} />
         <Stack.Screen name="ready" options={{ headerShown: false }} />
+        <Stack.Screen name="signal" options={{ headerShown: false }} />
+        <Stack.Screen name="nearby" options={{ headerShown: false }} />
       </Stack>
     </>
   );

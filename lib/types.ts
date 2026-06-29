@@ -10,6 +10,7 @@ export type Profile = {
 export type Incident = {
   id: string;
   description: string | null;
+  creator_uid: string | null;
   geohash: string;
   status: IncidentStatus;
   expires_at: string;
