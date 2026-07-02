@@ -1,15 +1,13 @@
 import { requireNativeModule } from 'expo-modules-core';
 
 type NativeFlintBle = {
-  startAdvertising(serviceUuid: string): Promise<void>;
+  startAdvertising(token: string, ttlMs: number): Promise<void>;
   stopAdvertising(): Promise<void>;
   isAdvertisingSupported(): Promise<boolean>;
 };
 
-// Resolve the native module lazily, on first use, instead of at import time.
-// That lets the JS bundle load where the native module isn't present (e.g. Expo
-// Go) — the BLE functions only throw if you actually call them there. In a dev
-// build this resolves normally.
+// Resolve the native module lazily, on first use, so the JS bundle still loads
+// where the native module is absent (e.g. Expo Go) — calls just throw there.
 let nativeModule: NativeFlintBle | null = null;
 function getNative(): NativeFlintBle {
   if (!nativeModule) {
@@ -18,8 +16,10 @@ function getNative(): NativeFlintBle {
   return nativeModule;
 }
 
-export function startAdvertising(serviceUuid: string): Promise<void> {
-  return getNative().startAdvertising(serviceUuid);
+// token is served over GATT; ttlMs is a native auto-stop so broadcasting caps
+// out even while the app is backgrounded. The fixed service UUID is hardcoded natively.
+export function startAdvertising(token: string, ttlMs: number): Promise<void> {
+  return getNative().startAdvertising(token, ttlMs);
 }
 
 export function stopAdvertising(): Promise<void> {
