@@ -12,7 +12,7 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Flint uses your location to find nearby people bothered by loud phone audio, so you can speak up together."
       },
-      "bundleIdentifier": "com.anonymous.flint-app"
+      "bundleIdentifier": "com.readoutconsult.flint-app"
     },
     "android": {
       "adaptiveIcon": {
