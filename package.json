@@ -32,5 +32,10 @@
     "ios": "expo run:ios",
     "web": "expo start --web"
   },
+  "expo": {
+    "autolinking": {
+      "searchPaths": ["./modules"]
+    }
+  },
   "private": true
 }
