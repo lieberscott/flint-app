@@ -1,45 +1,56 @@
 // app/index.tsx
 //
-// Home — the new entry point. Discovers a nearby flagged signal (BLE) or lets
-// you flag one yourself, then routes into the courage screen with a real
-// signalId. This replaced the legacy map home.
+// Home — discovers ALL nearby flagged signals (BLE) and shows them as a live,
+// stacked list, each with its description and member count. You join whichever
+// one is yours, or flag a new one (which stacks alongside the others). Each card
+// is live-subscribed, so it updates its count and disappears when that nuisance
+// resolves or empties.
 //
-// BLE only works in a dev build, so in Expo Go discovery/flagging won't function
-// — the screen degrades to a clear notice instead of crashing. To exercise the
-// courage screen in Expo Go meanwhile, temporarily add this as the first line of
-// the component body:  return <Redirect href="/signal" />;
-// (import { Redirect } from 'expo-router') and remove it once you're on the dev build.
+// BLE only works in a dev build; in Expo Go it degrades to a notice.
 
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 
 import { Screen, Title, Subtitle, Card } from '@/components/ui';
-import { Button, LoadingState } from '@/components/controls';
+import { Button, Input, LoadingState } from '@/components/controls';
 import { ensureAnonymousSession } from '@/lib/auth';
-import { cosign, createSignal } from '@/lib/signals';
+import { cosign, createSignal, subscribeToSignal, type SignalSnapshot } from '@/lib/signals';
 import {
   requestBlePermissions,
   startDiscovery,
   startBroadcasting,
   stopBroadcasting,
-  type NearbySignal,
 } from '@/lib/proximity';
+
+const PRESETS = [
+  'Phone audio, no headphones',
+  'Loud phone call',
+  'Loud music',
+  'Whistling',
+];
 
 export default function HomeScreen() {
   const [ready, setReady] = useState(false);
-  const [nearby, setNearby] = useState<NearbySignal | null>(null);
+  const [ids, setIds] = useState<string[]>([]);
+  const [snaps, setSnaps] = useState<Record<string, SignalSnapshot>>({});
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const stopDiscovery = useRef<(() => void) | null>(null);
+  const [describing, setDescribing] = useState(false);
+  const [desc, setDesc] = useState('');
 
+  const stopDiscovery = useRef<(() => void) | null>(null);
+  const unsubs = useRef<Record<string, () => void>>({});
+  const rssiById = useRef<Record<string, number>>({});
+
+  // Discover nearby signals.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         await ensureAnonymousSession();
       } catch {
-        // ignore — flag/join will surface a clearer error if truly unauthed
+        // ignore
       }
       try {
         const ok = await requestBlePermissions();
@@ -48,12 +59,14 @@ export default function HomeScreen() {
           setNotice('Bluetooth permission is off. Enable it in Settings to find people nearby.');
         } else {
           stopDiscovery.current = startDiscovery(
-            (s) => setNearby((prev) => (!prev || (s.rssi ?? -999) > (prev.rssi ?? -999) ? s : prev)),
+            (s) => {
+              rssiById.current[s.signalId] = s.rssi ?? -999;
+              setIds((cur) => (cur.includes(s.signalId) ? cur : [...cur, s.signalId]));
+            },
             (msg) => setNotice(msg),
           );
         }
       } catch {
-        // Native BLE module missing — almost always Expo Go rather than a dev build.
         if (!cancelled) {
           setNotice('Bluetooth needs the dev build on a real device — discovery and flagging are inactive here.');
         }
@@ -69,12 +82,45 @@ export default function HomeScreen() {
     };
   }, []);
 
-  async function flag() {
+  // Keep one live subscription per discovered id; drop dead ones.
+  useEffect(() => {
+    for (const id of ids) {
+      if (unsubs.current[id]) continue;
+      unsubs.current[id] = subscribeToSignal(id, (snap) => {
+        const dead = !snap || snap.status === 'resolved' || snap.cosign_count === 0;
+        if (dead) {
+          unsubs.current[id]?.();
+          delete unsubs.current[id];
+          delete rssiById.current[id];
+          setSnaps((cur) => {
+            const next = { ...cur };
+            delete next[id];
+            return next;
+          });
+          setIds((cur) => cur.filter((x) => x !== id));
+        } else {
+          setSnaps((cur) => ({ ...cur, [id]: snap }));
+        }
+      });
+    }
+  }, [ids]);
+
+  // Tear down all subscriptions on unmount.
+  useEffect(() => {
+    return () => {
+      Object.values(unsubs.current).forEach((u) => u());
+      unsubs.current = {};
+    };
+  }, []);
+
+  async function confirmFlag() {
     setBusy(true);
     setNotice(null);
     try {
-      const id = await createSignal();
+      const id = await createSignal(desc.trim() || undefined);
       await startBroadcasting(id);
+      setDescribing(false);
+      setDesc('');
       router.push(`/signal?signalId=${id}`);
     } catch (e) {
       setNotice('Could not flag: ' + String(e));
@@ -83,13 +129,12 @@ export default function HomeScreen() {
     }
   }
 
-  async function join() {
-    if (!nearby) return;
+  async function join(id: string) {
     setBusy(true);
     setNotice(null);
     try {
-      await cosign(nearby.signalId);
-      router.push(`/signal?signalId=${nearby.signalId}`);
+      await cosign(id);
+      router.push(`/signal?signalId=${id}`);
     } catch (e) {
       setNotice('Could not join: ' + String(e));
     } finally {
@@ -105,16 +150,65 @@ export default function HomeScreen() {
     );
   }
 
+  if (describing) {
+    return (
+      <Screen>
+        <Title>What's the noise?</Title>
+        <View style={styles.chips}>
+          {PRESETS.map((p) => (
+            <Pressable
+              key={p}
+              onPress={() => setDesc(p)}
+              style={[styles.chip, desc === p && styles.chipActive]}>
+              <Text style={[styles.chipText, desc === p && styles.chipTextActive]}>{p}</Text>
+            </Pressable>
+          ))}
+        </View>
+        <Input
+          label="Or describe it"
+          value={desc}
+          onChangeText={setDesc}
+          placeholder="e.g. loud video on speaker"
+          maxLength={60}
+        />
+        <Button label={busy ? 'One moment…' : 'Flag it'} onPress={confirmFlag} disabled={busy} />
+        <Button
+          label="Cancel"
+          variant="secondary"
+          onPress={() => {
+            setDescribing(false);
+            setDesc('');
+          }}
+        />
+        {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+      </Screen>
+    );
+  }
+
+  const live = ids
+    .map((id) => snaps[id])
+    .filter(
+      (s): s is SignalSnapshot =>
+        !!s && !s.has_cosigned && s.status !== 'resolved' && s.cosign_count > 0,
+    )
+    .sort((a, b) => (rssiById.current[b.id] ?? -999) - (rssiById.current[a.id] ?? -999));
+
   return (
     <Screen>
       <Title>Flint</Title>
 
-      {nearby ? (
-        <Card>
-          <Text style={styles.cardTitle}>Someone nearby flagged loud audio</Text>
-          <Text style={styles.cardNote}>You're not the only one noticing it.</Text>
-          <Button label={busy ? 'One moment…' : 'Join them'} onPress={join} disabled={busy} />
-        </Card>
+      {live.length > 0 ? (
+        live.map((s) => (
+          <Card key={s.id}>
+            <Text style={styles.cardTitle}>
+              {s.descriptor ? s.descriptor : 'Loud audio flagged nearby'}
+            </Text>
+            <Text style={styles.cardNote}>
+              {s.cosign_count} {s.cosign_count === 1 ? 'person' : 'people'} flagged this.
+            </Text>
+            <Button label={busy ? 'One moment…' : 'Join them'} onPress={() => join(s.id)} disabled={busy} />
+          </Card>
+        ))
       ) : (
         <View style={styles.listening}>
           <Text style={styles.listeningText}>Listening for anything flagged nearby…</Text>
@@ -123,8 +217,8 @@ export default function HomeScreen() {
 
       <View style={styles.spacer} />
 
-      <Subtitle>Hearing loud audio no one's flagged yet?</Subtitle>
-      <Button label={busy ? 'One moment…' : 'Flag loud audio'} onPress={flag} disabled={busy} />
+      <Subtitle>Hearing something no one's flagged yet?</Subtitle>
+      <Button label="Flag loud audio" onPress={() => setDescribing(true)} disabled={busy} />
 
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
     </Screen>
@@ -145,4 +239,17 @@ const styles = StyleSheet.create({
   listeningText: { color: '#94a3b8', fontSize: 14 },
   spacer: { height: 8 },
   notice: { color: '#fca5a5', fontSize: 13 },
+
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    backgroundColor: '#1a1a2e',
+    borderColor: '#334155',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  chipActive: { backgroundColor: '#e94560', borderColor: '#e94560' },
+  chipText: { color: '#cbd5e1', fontSize: 13 },
+  chipTextActive: { color: '#fff' },
 });

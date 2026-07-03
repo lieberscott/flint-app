@@ -1,8 +1,19 @@
 import { StyleSheet, Text, View, type ViewProps } from 'react-native';
 import type { ReactNode } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export function Screen({ style, ...props }: ViewProps) {
-  return <View style={[styles.screen, style]} {...props} />;
+  const insets = useSafeAreaInsets();
+  return (
+    <View
+      style={[
+        styles.screen,
+        { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 },
+        style,
+      ]}
+      {...props}
+    />
+  );
 }
 
 export function Title({ children }: { children: ReactNode }) {
@@ -25,7 +36,7 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: '#16213e',
-    padding: 24,
+    paddingHorizontal: 24,
     gap: 16,
   },
   title: {

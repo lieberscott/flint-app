@@ -1,23 +1,19 @@
 // lib/signals.ts
 //
-// The new Flint model: a private co-sign plus a single atomic claim.
+// The Flint model: private co-sign (= membership) + a single atomic claim.
 //
-// Replaces the role / GO / map-bloc model in lib/incidents.ts. It writes to a
-// fresh `signals/` path on purpose, so it never mixes with legacy `incidents/`
-// data — or trips the old member-gated security rules — while both models exist
-// during the migration. (When you delete the legacy code at the end, this path
-// just stays; the old data is short-lived and disposable.)
+// Membership is your presence in `cosigns`. The count is how many members there
+// are. "Not me right now" sets a `stepped_back` flag but keeps you a member;
+// "Leave" removes your cosign, and when the last member leaves, the whole signal
+// is deleted so it disappears from everyone's screen. Backing is an emoji a
+// co-signer sends the asker afterward.
 //
 // Realtime Database layout:
 //   signals/{signalId}/
-//     created_at   number          server time it was flagged
-//     descriptor   string | null   optional free text, e.g. "music, back of car"
-//     status       'open' | 'claimed' | 'resolved'
-//     claimed_by   string | null   uid of the single asker, once claimed
-//     claimed_at   number | null
-//     resolved_at  number | null
-//     cosigns/     { [uid]: number }   private "this is bothering me too"
-//     backing/     { [uid]: number }   post-incident "that took guts"
+//     created_at, descriptor, status, claimed_by, claimed_at, resolved_at
+//     cosigns/      { [uid]: number }   membership (drives the count)
+//     stepped_back/ { [uid]: number }   members who won't be the one to ask
+//     backing/      { [uid]: string }   emoji acknowledgement to the asker
 
 import {
   ref,
@@ -25,6 +21,7 @@ import {
   set,
   update,
   remove,
+  get,
   onValue,
   runTransaction,
   serverTimestamp,
@@ -33,7 +30,9 @@ import { auth, db } from './firebase';
 
 export type SignalStatus = 'open' | 'claimed' | 'resolved';
 
-// Raw shape stored under signals/{id}.
+// The acknowledgements a co-signer can send the asker.
+export const BACKING_EMOJIS = ['👍', '❤️', '🙏'];
+
 export type Signal = {
   created_at: number;
   descriptor: string | null;
@@ -42,12 +41,11 @@ export type Signal = {
   claimed_at: number | null;
   resolved_at?: number | null;
   cosigns?: Record<string, number>;
-  backing?: Record<string, number>;
+  stepped_back?: Record<string, number>;
+  backing?: Record<string, string>;
 };
 
-// Per-device view the UI consumes. The counts and the "me" flags are derived
-// locally, never written back — that is what keeps the signal private to each
-// viewer and invisible to the target.
+// Per-device view the UI consumes — computed locally, never written back.
 export type SignalSnapshot = {
   id: string;
   status: SignalStatus;
@@ -55,17 +53,19 @@ export type SignalSnapshot = {
   created_at: number | null;
   claimed_by: string | null;
   claimed_by_me: boolean;
-  cosign_count: number;
-  has_cosigned: boolean;
+  cosign_count: number; // total members (including you, if you're one)
+  has_cosigned: boolean; // are YOU a member
+  stepped_back_count: number;
+  i_stepped_back: boolean;
   backing_count: number;
+  backing_emojis: string[]; // the emojis co-signers sent the asker
 };
 
 export type ClaimResult = {
-  claimed_by_me: boolean;   // did THIS device win the single claim?
-  claimed_by: string | null; // who holds it now (uid), if anyone
+  claimed_by_me: boolean;
+  claimed_by: string | null;
 };
 
-// Mirrors the pattern already in lib/incidents.ts.
 function requireUid(): string {
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error('Not signed in');
@@ -76,9 +76,6 @@ function requireUid(): string {
 // Writes
 // ---------------------------------------------------------------------------
 
-// Flag loud audio. The creator is auto-co-signed (they flagged it, so they're
-// already bothered), which seeds the count at 1. Returns the new signalId —
-// this is what BLE broadcasts later so nearby devices can subscribe.
 export async function createSignal(descriptor?: string): Promise<string> {
   const uid = requireUid();
   const signalRef = push(ref(db, 'signals'));
@@ -88,7 +85,7 @@ export async function createSignal(descriptor?: string): Promise<string> {
   const trimmed = descriptor?.trim();
   await set(signalRef, {
     created_at: serverTimestamp(),
-    descriptor: trimmed ? trimmed.slice(0, 40) : null,
+    descriptor: trimmed ? trimmed.slice(0, 60) : null,
     status: 'open',
     claimed_by: null,
     claimed_at: null,
@@ -98,24 +95,34 @@ export async function createSignal(descriptor?: string): Promise<string> {
   return id;
 }
 
-// Private "this is bothering me too". Drives the count + live presence.
 export async function cosign(signalId: string): Promise<void> {
   const uid = requireUid();
   await set(ref(db, `signals/${signalId}/cosigns/${uid}`), serverTimestamp());
 }
 
-// Withdraw a co-sign (changed their mind, or moved out of range).
-export async function removeCosign(signalId: string): Promise<void> {
+export async function setSteppedBack(signalId: string, stepped: boolean): Promise<void> {
   const uid = requireUid();
-  await remove(ref(db, `signals/${signalId}/cosigns/${uid}`));
+  const r = ref(db, `signals/${signalId}/stepped_back/${uid}`);
+  if (stepped) {
+    await set(r, serverTimestamp());
+  } else {
+    await remove(r);
+  }
 }
 
-// The atomic claim. We transact on the claimed_by LEAF (not the whole node),
-// which mirrors how setMemberRole claims confronter_uid in your incidents.ts —
-// and it's what lets the security rules lock the claim down. Returning a value
-// (not undefined) when it's unclaimed makes Firebase re-validate against the
-// server if our cached copy was stale, so a race resolves to exactly one winner.
-// Only the winner then writes status + claimed_at.
+// Leave entirely. Two sequential writes (remove membership, then conditionally
+// delete the emptied signal) — a combined multi-path write trips the rules.
+export async function leaveSignal(signalId: string): Promise<void> {
+  const uid = requireUid();
+  await remove(ref(db, `signals/${signalId}/cosigns/${uid}`));
+  await remove(ref(db, `signals/${signalId}/stepped_back/${uid}`));
+
+  const remaining = await get(ref(db, `signals/${signalId}/cosigns`));
+  if (!remaining.exists()) {
+    await remove(ref(db, `signals/${signalId}`));
+  }
+}
+
 export async function claimSignal(signalId: string): Promise<ClaimResult> {
   const uid = requireUid();
   const claimedByRef = ref(db, `signals/${signalId}/claimed_by`);
@@ -129,20 +136,15 @@ export async function claimSignal(signalId: string): Promise<ClaimResult> {
   const wonByMe = result.committed && claimedBy === uid;
 
   if (wonByMe) {
-    // Only the winner flips status + stamps the time.
     await update(ref(db, `signals/${signalId}`), {
       status: 'claimed',
       claimed_at: serverTimestamp(),
     });
   }
 
-  return {
-    claimed_by_me: wonByMe,
-    claimed_by: claimedBy,
-  };
+  return { claimed_by_me: wonByMe, claimed_by: claimedBy };
 }
 
-// The asker marks it done. Single status write (the claimer only, per rules).
 export async function resolveSignal(signalId: string): Promise<void> {
   await update(ref(db, `signals/${signalId}`), {
     status: 'resolved',
@@ -150,13 +152,12 @@ export async function resolveSignal(signalId: string): Promise<void> {
   });
 }
 
-// Post-incident "that took guts", from a co-signer to the asker. Anonymous.
-export async function addBacking(signalId: string): Promise<void> {
+// Send the asker an emoji acknowledgement.
+export async function addBacking(signalId: string, emoji: string): Promise<void> {
   const uid = requireUid();
-  await set(ref(db, `signals/${signalId}/backing/${uid}`), serverTimestamp());
+  await set(ref(db, `signals/${signalId}/backing/${uid}`), emoji);
 }
 
-// Full removal — rules permit this only once the signal is resolved (cleanup).
 export async function removeSignal(signalId: string): Promise<void> {
   await remove(ref(db, `signals/${signalId}`));
 }
@@ -165,9 +166,6 @@ export async function removeSignal(signalId: string): Promise<void> {
 // Reads
 // ---------------------------------------------------------------------------
 
-// Live subscription to a single signal. Fires on every change with a per-device
-// snapshot (or null if it's gone). Returns the unsubscribe function — call it on
-// unmount / when leaving.
 export function subscribeToSignal(
   signalId: string,
   callback: (signal: SignalSnapshot | null) => void,
@@ -179,18 +177,18 @@ export function subscribeToSignal(
   });
 }
 
-// Derive the per-device view. Counts and "me" flags are computed here, locally,
-// for the current device only — never written back. We derive an EFFECTIVE
-// status from claimed_by too, so the brief moment between winning the claim and
-// the status write still reads as "claimed" rather than flickering back to open.
 function toSnapshot(id: string, raw: Signal): SignalSnapshot {
   const uid = auth.currentUser?.uid ?? null;
   const cosigns = raw.cosigns ?? {};
+  const steppedBack = raw.stepped_back ?? {};
   const backing = raw.backing ?? {};
   const claimedBy = raw.claimed_by ?? null;
 
   const status: SignalStatus =
     raw.status === 'resolved' ? 'resolved' : claimedBy != null ? 'claimed' : 'open';
+
+  const has = (map: Record<string, unknown>) =>
+    uid != null && Object.prototype.hasOwnProperty.call(map, uid);
 
   return {
     id,
@@ -200,12 +198,12 @@ function toSnapshot(id: string, raw: Signal): SignalSnapshot {
     claimed_by: claimedBy,
     claimed_by_me: uid != null && claimedBy === uid,
     cosign_count: Object.keys(cosigns).length,
-    has_cosigned: uid != null && Object.prototype.hasOwnProperty.call(cosigns, uid),
+    has_cosigned: has(cosigns),
+    stepped_back_count: Object.keys(steppedBack).length,
+    i_stepped_back: has(steppedBack),
     backing_count: Object.keys(backing).length,
+    backing_emojis: Object.values(backing),
   };
 }
 
-// The line the app hands the single asker. First person, norm-based, and it
-// never invokes the others — the count is courage on their own screen, not a
-// line to say out loud.
 export const ASK_SCRIPT = 'Hey — would you mind throwing on headphones?';

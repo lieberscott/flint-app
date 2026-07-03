@@ -7,10 +7,11 @@
 // GATT characteristic: a scanner sees the fixed UUID, connects, reads the token,
 // disconnects, then resolves token -> signalId via Firebase (rendezvous/{token}).
 //
-// Discovery is foreground-only for now. Broadcasting runs in the background on
-// iOS (peripheral background mode); Android background broadcasting still needs
-// a foreground service (next step). Broadcasting auto-stops after BROADCAST_TTL_MS
-// via a NATIVE timer, so it caps out even while the app is backgrounded.
+// Discovery is foreground-only. It reports EVERY nearby Flint host (multiple
+// nuisances can coexist) and re-reads each device periodically so it catches new
+// nuisances and hosts that re-flag. Broadcasting runs in the background on iOS;
+// Android background broadcasting still needs a foreground service. Broadcasting
+// auto-stops after BROADCAST_TTL_MS via a native timer.
 
 import { Platform, PermissionsAndroid } from 'react-native';
 import { BleManager, State } from 'react-native-ble-plx';
@@ -21,14 +22,15 @@ import {
   stopAdvertising as nativeStopAdvertising,
 } from '../modules/flint-ble';
 
-// Fixed identifiers — these MUST match the UUIDs hardcoded in the native module
-// (ios/FlintBleModule.swift and android/.../FlintBleModule.kt).
+// Fixed identifiers — MUST match the UUIDs hardcoded in the native module.
 export const FLINT_SERVICE_UUID = '8a7f1e00-1f1a-4c2b-9d4e-000000000001';
 export const FLINT_TOKEN_CHAR_UUID = '8a7f1e00-1f1a-4c2b-9d4e-000000000002';
 
-// How long a host keeps broadcasting before auto-stopping. Enforced natively so
-// it holds even when the app is backgrounded and JS is frozen.
+// Broadcast auto-stop, enforced natively so it holds while backgrounded.
 export const BROADCAST_TTL_MS = 10 * 60 * 1000;
+
+// How often we'll re-read a given device's GATT token (to catch re-flags).
+const READ_THROTTLE_MS = 15 * 1000;
 
 export type NearbySignal = {
   signalId: string;
@@ -69,8 +71,6 @@ export function makeToken(): string {
 export async function publishRendezvous(token: string, signalId: string): Promise<void> {
   const r = ref(db, `rendezvous/${token}`);
   await set(r, signalId);
-  // Safety net: if this client drops (app killed, network lost), Firebase clears
-  // the stale token for us.
   onDisconnect(r).remove();
 }
 export async function clearRendezvous(token: string): Promise<void> {
@@ -94,8 +94,6 @@ export async function startBroadcasting(signalId: string): Promise<void> {
   const token = makeToken();
   currentToken = token;
   await publishRendezvous(token, signalId);
-  // Native advertises the fixed UUID, serves this token over GATT, and auto-stops
-  // itself after BROADCAST_TTL_MS (survives backgrounding, unlike a JS timer).
   await nativeStartAdvertising(token, BROADCAST_TTL_MS);
 }
 
@@ -118,7 +116,7 @@ function base64ToUtf8(b64: string): string {
     try {
       return g.atob(b64);
     } catch {
-      // fall through to manual decode
+      // fall through
     }
   }
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -139,26 +137,34 @@ function base64ToUtf8(b64: string): string {
   return out;
 }
 
+// Start scanning. onFound fires for every nearby Flint signal, and again when a
+// device is re-read (throttled), so the caller should dedupe by signalId. Returns
+// a stop function.
 export function startDiscovery(
   onFound: (nearby: NearbySignal) => void,
   onError?: (message: string) => void,
 ): () => void {
   const m = getManager();
-  const seen = new Set<string>();
+  const lastRead = new Map<string, number>();
   let scanning = false;
 
   const startScan = () => {
     if (scanning) return;
     scanning = true;
-    // Filter on the fixed Flint UUID — required for iOS to honor the scan and to
-    // discover backgrounded iOS advertisers.
-    m.startDeviceScan([FLINT_SERVICE_UUID], { allowDuplicates: false }, async (err, device) => {
+    // allowDuplicates so we keep hearing devices and can re-read them; we filter
+    // on the fixed Flint UUID (required for iOS + backgrounded-advertiser reach).
+    m.startDeviceScan([FLINT_SERVICE_UUID], { allowDuplicates: true }, async (err, device) => {
       if (err) {
         onError?.(err.message);
         return;
       }
-      if (!device || seen.has(device.id)) return;
-      seen.add(device.id);
+      if (!device) return;
+
+      const now = Date.now();
+      const last = lastRead.get(device.id) ?? 0;
+      if (now - last < READ_THROTTLE_MS) return; // don't hammer the same device
+      lastRead.set(device.id, now);
+
       try {
         const connected = await device.connect();
         await connected.discoverAllServicesAndCharacteristics();
@@ -172,8 +178,7 @@ export function startDiscovery(
         const signalId = await resolveSignalId(token);
         if (signalId) onFound({ signalId, token, rssi: device.rssi ?? null });
       } catch {
-        // A failed connect/read just means skip this device; allow a later retry.
-        seen.delete(device.id);
+        lastRead.delete(device.id); // let a failed read retry sooner
       }
     });
   };
