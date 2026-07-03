@@ -63,6 +63,12 @@
           ],
           "bluetoothAlwaysPermission": "Flint uses Bluetooth to sense how many people near you are bothered by the same audio."
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Flint shows your location so you can confirm it has you in the right spot."
+        }
       ]
     ],
     "experiments": {

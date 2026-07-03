@@ -5,6 +5,12 @@
 // right now" flags you stepped-back but keeps you in; "Leave this group" removes
 // you (emptying the group deletes it for all). On resolve, co-signers send the
 // asker an emoji, which the asker actually sees.
+//
+// This screen also OWNS broadcasting: while you're an active member, your phone
+// advertises this signal, so newcomers can discover the group through any member
+// (not just the original flagger). It stops when you leave, it resolves, or you
+// close the screen — and iOS keeps it going briefly in the background (up to the
+// native cap) so you can pocket the phone.
 
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -12,6 +18,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 
 import { Screen, Title, Subtitle, Card } from '@/components/ui';
 import { Button, LoadingState } from '@/components/controls';
+import { startBroadcasting, stopBroadcasting } from '@/lib/proximity';
 import {
   ASK_SCRIPT,
   BACKING_EMOJIS,
@@ -77,6 +84,17 @@ export default function SignalScreen() {
     });
     return unsubscribe;
   }, [signalId]);
+
+  // Broadcast while we're an active member (open/claimed). Stays true through the
+  // open->claimed transition (no churn); stops on resolve, leave, or unmount.
+  const active = !!signal && signal.status !== 'resolved';
+  useEffect(() => {
+    if (!signalId || !active) return;
+    startBroadcasting(signalId).catch(() => {});
+    return () => {
+      stopBroadcasting().catch(() => {});
+    };
+  }, [signalId, active]);
 
   async function onClaim() {
     if (!signalId) return;

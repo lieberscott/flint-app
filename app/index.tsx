@@ -2,9 +2,11 @@
 //
 // Home — discovers ALL nearby flagged signals (BLE) and shows them as a live,
 // stacked list, each with its description and member count. You join whichever
-// one is yours, or flag a new one (which stacks alongside the others). Each card
-// is live-subscribed, so it updates its count and disappears when that nuisance
-// resolves or empties.
+// one is yours, or flag a new one (which stacks alongside the others).
+//
+// Broadcasting is NOT done here anymore — the courage screen owns it, tied to
+// active membership, so every member (not just the flagger) is discoverable.
+// The home only scans.
 //
 // BLE only works in a dev build; in Expo Go it degrades to a notice.
 
@@ -12,16 +14,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 
+import { LocationBanner } from '@/components/LocationBanner';
 import { Screen, Title, Subtitle, Card } from '@/components/ui';
 import { Button, Input, LoadingState } from '@/components/controls';
 import { ensureAnonymousSession } from '@/lib/auth';
 import { cosign, createSignal, subscribeToSignal, type SignalSnapshot } from '@/lib/signals';
-import {
-  requestBlePermissions,
-  startDiscovery,
-  startBroadcasting,
-  stopBroadcasting,
-} from '@/lib/proximity';
+import { requestBlePermissions, startDiscovery } from '@/lib/proximity';
 
 const PRESETS = [
   'Phone audio, no headphones',
@@ -78,7 +76,6 @@ export default function HomeScreen() {
       cancelled = true;
       stopDiscovery.current?.();
       stopDiscovery.current = null;
-      stopBroadcasting();
     };
   }, []);
 
@@ -118,7 +115,6 @@ export default function HomeScreen() {
     setNotice(null);
     try {
       const id = await createSignal(desc.trim() || undefined);
-      await startBroadcasting(id);
       setDescribing(false);
       setDesc('');
       router.push(`/signal?signalId=${id}`);
@@ -196,6 +192,7 @@ export default function HomeScreen() {
   return (
     <Screen>
       <Title>Flint</Title>
+      <LocationBanner />
 
       {live.length > 0 ? (
         live.map((s) => (
