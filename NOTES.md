@@ -9,7 +9,6 @@ Running list so nothing gets lost. Current shape: co-sign + single-asker model �
 
 ## Known limitations / rough edges
 
-- **Bundle id mismatch**: `app.json` has `com.anonymous.flint-app`, Xcode was set to `com.readoutconsult.flint-app`. Set `ios.bundleIdentifier` in `app.json` so `prebuild --clean` stops overwriting the Xcode value. (Signing hygiene, not a bug.)
 - **10-minute broadcast cap**: an individual stops being discoverable 10 min after joining. The *group* stays discoverable as long as anyone is broadcasting. If a still-watching member should stay discoverable longer, add a re-broadcast refresh.
 - **Home list doesn't scroll** — fine for a few nuisances; wrap in a `ScrollView` if many can appear at once.
 - **No merging of duplicate nuisances** — two people flagging the same noise create two separate groups. Possible future: dedupe/merge near-identical nearby ones.

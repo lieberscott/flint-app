@@ -33,6 +33,9 @@ export type SignalStatus = 'open' | 'claimed' | 'resolved';
 // The acknowledgements a co-signer can send the asker.
 export const BACKING_EMOJIS = ['👍', '❤️', '🙏'];
 
+// A group is swept if nothing meaningful happens for this long.
+export const INACTIVITY_MS = 10 * 60 * 1000;
+
 export type Signal = {
   created_at: number;
   descriptor: string | null;
@@ -43,6 +46,8 @@ export type Signal = {
   cosigns?: Record<string, number>;
   stepped_back?: Record<string, number>;
   backing?: Record<string, string>;
+  attempts?: number;
+  last_active?: number;
 };
 
 // Per-device view the UI consumes — computed locally, never written back.
@@ -59,6 +64,8 @@ export type SignalSnapshot = {
   i_stepped_back: boolean;
   backing_count: number;
   backing_emojis: string[]; // the emojis co-signers sent the asker
+  attempts: number;
+  last_active: number | null;
 };
 
 export type ClaimResult = {
@@ -85,6 +92,7 @@ export async function createSignal(descriptor?: string): Promise<string> {
   const trimmed = descriptor?.trim();
   await set(signalRef, {
     created_at: serverTimestamp(),
+    last_active: serverTimestamp(),
     descriptor: trimmed ? trimmed.slice(0, 60) : null,
     status: 'open',
     claimed_by: null,
@@ -97,7 +105,10 @@ export async function createSignal(descriptor?: string): Promise<string> {
 
 export async function cosign(signalId: string): Promise<void> {
   const uid = requireUid();
-  await set(ref(db, `signals/${signalId}/cosigns/${uid}`), serverTimestamp());
+  await update(ref(db, `signals/${signalId}`), {
+    [`cosigns/${uid}`]: serverTimestamp(),
+    last_active: serverTimestamp(),
+  });
 }
 
 export async function setSteppedBack(signalId: string, stepped: boolean): Promise<void> {
@@ -139,6 +150,7 @@ export async function claimSignal(signalId: string): Promise<ClaimResult> {
     await update(ref(db, `signals/${signalId}`), {
       status: 'claimed',
       claimed_at: serverTimestamp(),
+      last_active: serverTimestamp(),
     });
   }
 
@@ -152,6 +164,29 @@ export async function resolveSignal(signalId: string): Promise<void> {
   });
 }
 
+// Give the ask back to the group without reporting an outcome. Claimer only:
+// clears the claim and reopens the ask so anyone (including you) can take it.
+export async function handBackClaim(signalId: string): Promise<void> {
+  await update(ref(db, `signals/${signalId}`), {
+    status: 'open',
+    claimed_by: null,
+    claimed_at: null,
+    last_active: serverTimestamp(),
+  });
+}
+
+// The asker tried, but nothing changed. Reopen the ask and bump the attempt
+// count so the group can see it's been tried (and someone else can try).
+export async function reportNoChange(signalId: string, currentAttempts: number): Promise<void> {
+  await update(ref(db, `signals/${signalId}`), {
+    status: 'open',
+    claimed_by: null,
+    claimed_at: null,
+    attempts: currentAttempts + 1,
+    last_active: serverTimestamp(),
+  });
+}
+
 // Send the asker an emoji acknowledgement.
 export async function addBacking(signalId: string, emoji: string): Promise<void> {
   const uid = requireUid();
@@ -160,6 +195,16 @@ export async function addBacking(signalId: string, emoji: string): Promise<void>
 
 export async function removeSignal(signalId: string): Promise<void> {
   await remove(ref(db, `signals/${signalId}`));
+}
+
+// Heartbeat — refresh last_active so an actively-viewed group isn't swept.
+export async function touchSignal(signalId: string): Promise<void> {
+  await update(ref(db, `signals/${signalId}`), { last_active: serverTimestamp() });
+}
+
+// Best-effort staleness hint (client clock; the security rule is the real guard).
+export function isStale(snap: SignalSnapshot): boolean {
+  return snap.last_active != null && Date.now() - snap.last_active > INACTIVITY_MS;
 }
 
 // ---------------------------------------------------------------------------
@@ -203,7 +248,22 @@ function toSnapshot(id: string, raw: Signal): SignalSnapshot {
     i_stepped_back: has(steppedBack),
     backing_count: Object.keys(backing).length,
     backing_emojis: Object.values(backing),
+    attempts: raw.attempts ?? 0,
+    last_active: typeof raw.last_active === 'number' ? raw.last_active : null,
   };
 }
 
-export const ASK_SCRIPT = 'Hey — would you mind throwing on headphones?';
+// A calm, first-person line tailored to the kind of noise (from the descriptor).
+// Never invokes the group — the count is courage on the asker's own screen.
+export function scriptFor(descriptor: string | null): string {
+  const d = (descriptor ?? '').toLowerCase();
+  if (d.includes('music')) return 'Hey — would you mind turning the music down a bit?';
+  if (d.includes('headphone') || d.includes('audio') || d.includes('video') || d.includes('speaker')) {
+    return 'Hey — would you mind throwing on headphones?';
+  }
+  if (d.includes('call') || d.includes('talking') || d.includes('phone')) {
+    return 'Hey — would you mind keeping the call down a little?';
+  }
+  if (d.includes('whistl')) return 'Hey — would you mind easing up on the whistling?';
+  return 'Hey — would you mind keeping it down a bit?';
+}

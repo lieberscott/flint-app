@@ -19,16 +19,20 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Screen, Title, Subtitle, Card } from '@/components/ui';
 import { Button, LoadingState } from '@/components/controls';
 import { startBroadcasting, stopBroadcasting } from '@/lib/proximity';
+import { logEvent } from '@/lib/events';
 import {
-  ASK_SCRIPT,
+  scriptFor,
   BACKING_EMOJIS,
   addBacking,
   claimSignal,
   createSignal,
   leaveSignal,
+  handBackClaim,
+  reportNoChange,
   resolveSignal,
   setSteppedBack,
   subscribeToSignal,
+  touchSignal,
   type SignalSnapshot,
 } from '@/lib/signals';
 
@@ -65,6 +69,7 @@ export default function SignalScreen() {
   const [busy, setBusy] = useState(false);
   const [sentEmoji, setSentEmoji] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reporting, setReporting] = useState(false);
 
   useEffect(() => {
     if (signalId) return;
@@ -96,11 +101,22 @@ export default function SignalScreen() {
     };
   }, [signalId, active]);
 
+  // Heartbeat: keep the group alive while it's actively on-screen.
+  useEffect(() => {
+    if (!signalId || !active) return;
+    touchSignal(signalId).catch(() => {});
+    const iv = setInterval(() => {
+      touchSignal(signalId).catch(() => {});
+    }, 4 * 60 * 1000);
+    return () => clearInterval(iv);
+  }, [signalId, active]);
+
   async function onClaim() {
     if (!signalId) return;
     setBusy(true);
     try {
-      await claimSignal(signalId);
+      const result = await claimSignal(signalId);
+      if (result.claimed_by_me) logEvent('claimed', { signalId }).catch(() => {});
     } catch {
       setError('Could not claim this.');
     } finally {
@@ -117,12 +133,36 @@ export default function SignalScreen() {
     }
   }
 
-  async function onResolve() {
+  async function onResolvedOutcome() {
     if (!signalId) return;
+    setReporting(false);
     try {
       await resolveSignal(signalId);
+      logEvent('resolved', { signalId }).catch(() => {});
     } catch {
-      setError('Could not mark this done.');
+      setError('Could not mark this resolved.');
+    }
+  }
+
+  async function onNoChange() {
+    if (!signalId || !signal) return;
+    setReporting(false);
+    try {
+      await reportNoChange(signalId, signal.attempts);
+      logEvent('attempt', { signalId }).catch(() => {});
+    } catch {
+      setError('Could not update that.');
+    }
+  }
+
+  async function onChangedMind() {
+    if (!signalId) return;
+    setReporting(false);
+    try {
+      await handBackClaim(signalId);
+      logEvent('handed_back', { signalId }).catch(() => {});
+    } catch {
+      setError('Could not hand it back.');
     }
   }
 
@@ -130,6 +170,7 @@ export default function SignalScreen() {
     if (signalId) {
       try {
         await leaveSignal(signalId);
+        logEvent('left', { signalId }).catch(() => {});
       } catch {
         // best-effort; still exit
       }
@@ -142,6 +183,7 @@ export default function SignalScreen() {
     setSentEmoji(emoji);
     try {
       await addBacking(signalId, emoji);
+      logEvent('backing', { signalId }).catch(() => {});
     } catch {
       setSentEmoji(null);
     }
@@ -190,10 +232,19 @@ export default function SignalScreen() {
       signal.stepped_back_count <= 0
         ? null
         : signal.i_stepped_back && signal.stepped_back_count === 1
-          ? "You've stepped back — someone else can ask."
+          ? "You'd rather not ask — that's fine, anyone can step up."
           : `${signal.stepped_back_count} ${
-              signal.stepped_back_count === 1 ? 'person has' : 'people have'
-            } stepped back.`;
+              signal.stepped_back_count === 1 ? 'person' : 'people'
+            } would rather not be the one to ask.`;
+
+    const attemptsText =
+      signal.attempts <= 0
+        ? null
+        : signal.attempts <= 2
+          ? `${signal.attempts} ${
+              signal.attempts === 1 ? 'person has' : 'people have'
+            } already asked — no luck yet.`
+          : 'A few people have already asked. It might be worth letting this one go.';
 
     return (
       <Screen>
@@ -202,6 +253,8 @@ export default function SignalScreen() {
             {signal.descriptor ? signal.descriptor : 'Loud audio flagged here'}
           </Text>
         </View>
+
+        {attemptsText ? <Text style={styles.attempts}>{attemptsText}</Text> : null}
 
         <View style={styles.hero}>
           <Presence count={signal.cosign_count} />
@@ -214,6 +267,13 @@ export default function SignalScreen() {
             ? 'No one else has flagged it yet — you can still say something. Your call.'
             : "You're not the only one. The car's with you."}
         </Text>
+
+        <View style={styles.caution}>
+          <Text style={styles.cautionText}>
+            Don't approach anyone who seems intoxicated, agitated, unwell, or unpredictable — or
+            anyone who's already reacted badly.
+          </Text>
+        </View>
 
         <View style={styles.actions}>
           <Button label={busy ? 'One moment…' : "I'll ask"} onPress={onClaim} disabled={busy} />
@@ -235,14 +295,30 @@ export default function SignalScreen() {
 
   if (signal.status === 'claimed') {
     if (signal.claimed_by_me) {
+      if (reporting) {
+        return (
+          <Screen>
+            <View style={styles.center}>
+              <Title>How'd it go?</Title>
+              <Text style={styles.note}>Did the ask sort it out? No worries either way.</Text>
+            </View>
+            <Button label="Resolved" onPress={onResolvedOutcome} />
+            <Button label="No change" variant="secondary" onPress={onNoChange} />
+            <Text style={styles.leave} onPress={() => setReporting(false)}>
+              Back
+            </Text>
+          </Screen>
+        );
+      }
       return (
         <Screen>
           <Title>You've got it</Title>
           <Subtitle>Say it once, calm, then you're done. One person, one reasonable ask.</Subtitle>
           <Card>
-            <Text style={styles.script}>{ASK_SCRIPT}</Text>
+            <Text style={styles.script}>{scriptFor(signal.descriptor)}</Text>
           </Card>
-          <Button label="Done" onPress={onResolve} />
+          <Button label="Done" onPress={() => setReporting(true)} />
+          <Button label="Changed my mind" variant="secondary" onPress={onChangedMind} />
           <Text style={styles.leave} onPress={onLeave}>
             Leave this group
           </Text>
@@ -346,7 +422,16 @@ const styles = StyleSheet.create({
 
   reassure: { color: '#e2e8f0', fontSize: 15, lineHeight: 22, textAlign: 'center' },
   actions: { gap: 12 },
+  caution: {
+    backgroundColor: '#2a1f2e',
+    borderColor: '#7c3a4a',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 13,
+  },
+  cautionText: { color: '#f5c4b3', fontSize: 13, lineHeight: 19 },
   stepped: { color: '#94a3b8', fontSize: 13, textAlign: 'center' },
+  attempts: { color: '#cbd5e1', fontSize: 13, textAlign: 'center' },
 
   script: { color: '#fff', fontSize: 20, lineHeight: 28, fontWeight: '600' },
 

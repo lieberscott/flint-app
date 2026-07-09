@@ -15,6 +15,7 @@ export default function RootLayout() {
         }}>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="signal" options={{ headerShown: false }} />
+        <Stack.Screen name="faq" options={{ title: 'How Flint works' }} />
       </Stack>
     </SafeAreaProvider>
   );
